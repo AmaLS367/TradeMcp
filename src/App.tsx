@@ -190,7 +190,7 @@ function OAuthAuthorize() {
 function MCPSettings() {
    const [copied, setCopied] = useState("");
 
-   const baseUrl = "https://vmi3245942.contaboserver.net/api/mcp/";
+   const baseUrl = import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin + '/api/mcp/';
 
    const handleCopy = (text: string, key: string) => {
        navigator.clipboard.writeText(text);
