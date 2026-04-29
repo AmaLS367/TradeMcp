@@ -106,26 +106,45 @@ function AuthGuard() {
 }
 
 function MCPSettings({ user }: { user: User }) {
-   const [token, setToken] = useState("");
-   const [error, setError] = useState("");
-   const [serverName, setServerName] = useState("trade-mcp");
-   const [serverUrl, setServerUrl] = useState(`${window.location.origin}/api/mcp/sse`);
+   const [apiKeys, setApiKeys] = useState<any[]>([]);
+   const [newKeyLabel, setNewKeyLabel] = useState("");
    const [copied, setCopied] = useState("");
+   const [error, setError] = useState("");
 
-   const handleGetToken = async () => {
+   const baseUrl = `${window.location.origin}/api/mcp`;
+   const legacySseUrl = `${window.location.origin}/api/mcp/sse`;
+
+   useEffect(() => {
+       const unsub = onSnapshot(
+           collection(db, `users/${user.uid}/api_keys`),
+           snap => setApiKeys(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+       );
+       return unsub;
+   }, [user.uid]);
+
+   const handleGenerate = async () => {
        try {
            const idToken = await user.getIdToken();
-           setToken(idToken);
+           const res = await fetch('/api/mcp/keys', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+               body: JSON.stringify({ label: newKeyLabel || 'Default' }),
+           });
+           if (!res.ok) throw new Error(await res.text());
+           setNewKeyLabel("");
        } catch (err: any) {
            setError(err.message);
        }
    };
 
-   const fullUrl = token ? `${serverUrl}?token=${token}` : `${serverUrl}?token=<YOUR_TOKEN>`;
-
-   const claudeConfig = JSON.stringify({
-       mcpServers: { [serverName]: { type: "sse", url: fullUrl } }
-   }, null, 2);
+   const handleRevoke = async (id: string) => {
+       if (!confirm('Revoke this key?')) return;
+       const idToken = await user.getIdToken();
+       await fetch(`/api/mcp/keys/${id}`, {
+           method: 'DELETE',
+           headers: { 'Authorization': `Bearer ${idToken}` },
+       });
+   };
 
    const handleCopy = (text: string, key: string) => {
        navigator.clipboard.writeText(text);
@@ -136,45 +155,80 @@ function MCPSettings({ user }: { user: User }) {
    return (
        <Card>
            <CardHeader>
-               <CardTitle>MCP Server Configuration</CardTitle>
-               <CardDescription>Configure your LLM client to connect to this MCP Server</CardDescription>
+               <CardTitle>MCP Server</CardTitle>
+               <CardDescription>Подключи любой LLM — ChatGPT, Claude, Cursor и другие</CardDescription>
            </CardHeader>
            <CardContent className="space-y-6">
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   <div className="space-y-2">
-                       <Label>Server Name</Label>
-                       <Input value={serverName} onChange={e => setServerName(e.target.value)} placeholder="trade-mcp" />
-                   </div>
-                   <div className="space-y-2">
-                       <Label>Server URL</Label>
-                       <Input value={serverUrl} onChange={e => setServerUrl(e.target.value)} />
-                   </div>
-               </div>
-
-               <div className="space-y-2">
-                   <Label>Auth Token (valid 1 hour)</Label>
-                   <div className="flex gap-2">
-                       <Button onClick={handleGetToken}>Generate Token</Button>
-                       {token && (
-                           <Button variant="outline" onClick={() => handleCopy(token, 'token')}>
-                               {copied === 'token' ? 'Copied!' : 'Copy Token'}
-                           </Button>
-                       )}
-                   </div>
-                   {error && <p className="text-red-500 text-sm">{error}</p>}
-                   {token && (
-                       <textarea readOnly className="w-full mt-1 p-2 border rounded font-mono text-xs h-20 break-all" value={token} />
-                   )}
-               </div>
-
-               <div className="space-y-2">
-                   <div className="flex items-center justify-between">
-                       <Label>Claude Desktop / Cursor / Windsurf config</Label>
-                       <Button variant="outline" size="sm" onClick={() => handleCopy(claudeConfig, 'config')}>
-                           {copied === 'config' ? 'Copied!' : 'Copy'}
+               <div className="p-3 bg-slate-50 rounded space-y-2">
+                   <p className="text-xs text-gray-500 font-medium uppercase">MCP Server URL</p>
+                   <div className="flex items-center gap-2">
+                       <code className="text-sm flex-1 break-all">{baseUrl}</code>
+                       <Button variant="outline" size="sm" onClick={() => handleCopy(baseUrl, 'url')}>
+                           {copied === 'url' ? 'Copied!' : 'Copy'}
                        </Button>
                    </div>
-                   <textarea readOnly className="w-full p-2 border rounded font-mono text-xs h-36" value={claudeConfig} />
+                   <p className="text-xs text-gray-500">
+                       ChatGPT: выбери <b>No authentication</b> и вставь URL с <code>?key=...</code>. OAuth тут не используется.
+                   </p>
+                   <p className="text-xs text-gray-500">
+                       Claude/API: используй этот URL и передай ключ как <code>Authorization: Bearer YOUR_KEY</code>.
+                   </p>
+                   <p className="text-xs text-gray-400">
+                       Legacy SSE для старых клиентов: <code>{legacySseUrl}</code>
+                   </p>
+               </div>
+
+               <div className="space-y-3">
+                   <Label className="font-semibold">API Keys</Label>
+                   <div className="flex gap-2">
+                       <Input
+                           placeholder="Label (e.g. ChatGPT)"
+                           value={newKeyLabel}
+                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewKeyLabel(e.target.value)}
+                       />
+                       <Button onClick={handleGenerate}>Generate</Button>
+                   </div>
+                   {error && <p className="text-red-500 text-sm">{error}</p>}
+
+                   {apiKeys.length === 0 && (
+                       <p className="text-sm text-gray-400">Нет ключей. Создай первый.</p>
+                   )}
+
+                   <div className="space-y-2">
+                       {apiKeys.map(k => {
+                           const fullUrl = `${baseUrl}?key=${k.key}`;
+                           const legacyFullUrl = `${legacySseUrl}?key=${k.key}`;
+                           return (
+                               <div key={k.id} className="border rounded p-3 space-y-2">
+                                   <div className="flex items-center justify-between">
+                                       <span className="font-medium text-sm">{k.label}</span>
+                                       <Button variant="outline" size="sm" className="text-red-600 border-red-200" onClick={() => handleRevoke(k.id)}>Revoke</Button>
+                                   </div>
+                                   <p className="text-xs text-gray-500">ChatGPT URL (No authentication)</p>
+                                   <div className="flex items-center gap-2">
+                                       <input readOnly className="flex-1 text-xs font-mono bg-slate-50 border rounded px-2 py-1" value={fullUrl} />
+                                       <Button variant="outline" size="sm" onClick={() => handleCopy(fullUrl, k.id)}>
+                                           {copied === k.id ? 'Copied!' : 'Copy URL'}
+                                       </Button>
+                                   </div>
+                                   <p className="text-xs text-gray-500">Claude/API bearer token</p>
+                                   <div className="flex items-center gap-2">
+                                       <input readOnly className="flex-1 text-xs font-mono bg-slate-50 border rounded px-2 py-1" value={k.key} />
+                                       <Button variant="outline" size="sm" onClick={() => handleCopy(k.key, `${k.id}-token`)}>
+                                           {copied === `${k.id}-token` ? 'Copied!' : 'Copy Key'}
+                                       </Button>
+                                   </div>
+                                   <p className="text-xs text-gray-500">Legacy SSE URL</p>
+                                   <div className="flex items-center gap-2">
+                                       <input readOnly className="flex-1 text-xs font-mono bg-slate-50 border rounded px-2 py-1" value={legacyFullUrl} />
+                                       <Button variant="outline" size="sm" onClick={() => handleCopy(legacyFullUrl, `${k.id}-sse`)}>
+                                           {copied === `${k.id}-sse` ? 'Copied!' : 'Copy SSE'}
+                                       </Button>
+                                   </div>
+                               </div>
+                           );
+                       })}
+                   </div>
                </div>
            </CardContent>
        </Card>

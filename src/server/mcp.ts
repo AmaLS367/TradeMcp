@@ -1,5 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import express from "express";
 import admin from 'firebase-admin';
@@ -56,7 +57,140 @@ if (!admin.apps.length) {
 
 const db = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
 
-// We will keep a map of transport by session ID
+function createMcpServer(userId: string) {
+    const server = new Server({
+        name: "TradeMCPServer",
+        version: "1.0.0"
+    }, {
+        capabilities: {
+            tools: {}
+        },
+        instructions: "Use this server to inspect connected crypto exchange balances and create trade proposals for explicit user approval. Never create a trade proposal unless the user clearly asks for one."
+    });
+
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+        return {
+            tools: [
+                {
+                    name: "get_account_summary",
+                    description: "Use this when the user asks for crypto exchange account balances or a portfolio summary. Returns balances from the user's active Binance/Bybit connections.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {},
+                    },
+                    annotations: {
+                        readOnlyHint: true,
+                    },
+                },
+                {
+                    name: "create_trade_proposal",
+                    description: "Use this when the user explicitly asks to prepare a trade. This only creates a pending proposal for human approval in the Trade MCP dashboard; it does not execute the trade directly.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            provider: { type: "string", description: "Exchange provider.", enum: ["binance", "bybit"] },
+                            symbol: { type: "string", description: "Market symbol in exchange format, for example BTC/USDT." },
+                            side: { type: "string", enum: ["buy", "sell"] },
+                            orderType: { type: "string", enum: ["market", "limit"] },
+                            quantity: { type: "number", description: "Order quantity in base asset units." },
+                            price: { type: "number", description: "Limit price. Required for limit orders." },
+                            rationale: { type: "string", description: "Short reason for this trade proposal." }
+                        },
+                        required: ["provider", "symbol", "side", "orderType", "quantity", "rationale"]
+                    },
+                }
+            ]
+        };
+    });
+
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+        const { name, arguments: args } = request.params;
+
+        if (name === "get_account_summary") {
+            const connectionsSnap = await db.collection(`users/${userId}/exchange_connections`).where('isActive', '==', true).get();
+            if (connectionsSnap.empty) {
+                return { content: [{ type: "text", text: "No active exchange connections found." }]};
+            }
+            
+            const balances: any = {};
+            for (const doc of connectionsSnap.docs) {
+                const data = doc.data();
+                if (data.provider === 'binance' || data.provider === 'bybit') {
+                    try {
+                       const exchangeClass = (ccxt as any)[data.provider];
+                       const apiKey = decrypt(data.apiKeyEncrypted);
+                       const apiSecret = decrypt(data.apiSecretEncrypted);
+                       
+                       const exchange = new exchangeClass({
+                           apiKey,
+                           secret: apiSecret,
+                       });
+                       const balance = await exchange.fetchBalance();
+                       balances[data.provider] = balance.total;
+                    } catch (err: any) {
+                       balances[data.provider] = { error: err.message };
+                    }
+                }
+            }
+            return { content: [{ type: "text", text: JSON.stringify(balances, null, 2) }] };
+        }
+
+        if (name === "create_trade_proposal") {
+            const proposalRef = db.collection(`users/${userId}/trade_proposals`).doc();
+            await proposalRef.set({
+                ...args,
+                status: 'pending_approval',
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            return { content: [{ type: "text", text: `Proposal created with ID: ${proposalRef.id}. It is pending human approval in the Trade MCP dashboard.` }] };
+        }
+
+        throw new Error(`Unknown tool: ${name}`);
+    });
+
+    return server;
+}
+
+function getApiKey(req: express.Request) {
+    const queryKey = req.query.key;
+    if (typeof queryKey === 'string' && queryKey.trim()) {
+        return queryKey.trim();
+    }
+
+    const headerKey = req.header('x-api-key');
+    if (headerKey?.trim()) {
+        return headerKey.trim();
+    }
+
+    const authHeader = req.header('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+        return authHeader.slice('Bearer '.length).trim();
+    }
+
+    return null;
+}
+
+async function userIdFromMcpRequest(req: express.Request) {
+    const token = req.query.token as string | undefined;
+    if (token) {
+        const decoded = await admin.auth().verifyIdToken(token);
+        return decoded.uid;
+    }
+
+    const apiKey = getApiKey(req);
+    if (!apiKey) {
+        throw new Error('Missing auth');
+    }
+
+    const snap = await db.collectionGroup('api_keys').where('key', '==', apiKey).limit(1).get();
+    if (snap.empty) {
+        throw new Error('Invalid API key');
+    }
+
+    return snap.docs[0].ref.parent.parent!.id;
+}
+
+// We keep a map of legacy SSE transports by session ID.
 const transports = new Map<string, SSEServerTransport>();
 
 export const mcpRouter = express.Router();
@@ -123,119 +257,86 @@ mcpRouter.delete('/connections/:id', verifyAuth, async (req, res) => {
     }
 });
 
-mcpRouter.get('/sse', async (req, res) => {
-    // Basic auth via token in query
-    const token = req.query.token as string;
-    if (!token) {
-        res.status(401).send('Missing token');
-        return;
-    }
+// Generate long-lived API key
+mcpRouter.post('/keys', verifyAuth, async (req, res) => {
+    const userId = (req as any).userId;
+    const key = crypto.randomBytes(32).toString('hex');
+    const docRef = db.collection(`users/${userId}/api_keys`).doc();
+    await docRef.set({
+        key,
+        label: req.body.label || 'Default',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    res.json({ success: true, id: docRef.id, key });
+});
+
+// Revoke API key
+mcpRouter.delete('/keys/:id', verifyAuth, async (req, res) => {
+    const userId = (req as any).userId;
+    await db.collection(`users/${userId}/api_keys`).doc(req.params.id).delete();
+    res.json({ success: true });
+});
+
+mcpRouter.post('/', async (req, res) => {
+    let server: Server | undefined;
+    let transport: StreamableHTTPServerTransport | undefined;
 
     try {
-        const decodedToken = await admin.auth().verifyIdToken(token);
-        const userId = decodedToken.uid;
-        
+        const userId = await userIdFromMcpRequest(req);
+        server = createMcpServer(userId);
+        transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: undefined,
+        });
+
+        await server.connect(transport);
+        await transport.handleRequest(req, res, req.body);
+
+        res.on('close', () => {
+            transport?.close();
+            server?.close();
+        });
+    } catch (err: any) {
+        console.error("MCP streamable HTTP error:", err);
+        if (!res.headersSent) {
+            res.status(err.message === 'Missing auth' || err.message === 'Invalid API key' ? 401 : 500).json({
+                jsonrpc: "2.0",
+                error: {
+                    code: err.message === 'Missing auth' || err.message === 'Invalid API key' ? -32001 : -32603,
+                    message: err.message,
+                },
+                id: null,
+            });
+        }
+    }
+});
+
+mcpRouter.get('/', (_req, res) => {
+    res.status(405).json({
+        jsonrpc: "2.0",
+        error: {
+            code: -32000,
+            message: "Method not allowed. Use POST for Streamable HTTP MCP, or /sse for legacy SSE.",
+        },
+        id: null,
+    });
+});
+
+mcpRouter.get('/sse', async (req, res) => {
+    try {
+        const userId = await userIdFromMcpRequest(req);
         const transport = new SSEServerTransport("/api/mcp/messages", res);
-        
-        const server = new Server({
-            name: "TradeMCPServer",
-            version: "1.0.0"
-        }, {
-            capabilities: {
-                tools: {}
-            }
-        });
-
-        // Setup tools
-        server.setRequestHandler(ListToolsRequestSchema, async () => {
-            return {
-                tools: [
-                    {
-                        name: "get_account_summary",
-                        description: "Get user account summary and balances from the connected exchanges.",
-                        inputSchema: {
-                            type: "object",
-                            properties: {},
-                        }
-                    },
-                    {
-                        name: "create_trade_proposal",
-                        description: "Create a new trade proposal for the user to review.",
-                        inputSchema: {
-                            type: "object",
-                            properties: {
-                                provider: { type: "string", description: "Exchange provider (binance, bybit)" },
-                                symbol: { type: "string" },
-                                side: { type: "string", enum: ["buy", "sell"] },
-                                orderType: { type: "string", enum: ["market", "limit"] },
-                                quantity: { type: "number" },
-                                price: { type: "number" },
-                                rationale: { type: "string", description: "Reason for this trade" }
-                            },
-                            required: ["provider", "symbol", "side", "orderType", "quantity", "rationale"]
-                        }
-                    }
-                ]
-            };
-        });
-
-        server.setRequestHandler(CallToolRequestSchema, async (request) => {
-            const { name, arguments: args } = request.params;
-
-            if (name === "get_account_summary") {
-                // Fetch user's Exchange connections
-                const connectionsSnap = await db.collection(`users/${userId}/exchange_connections`).where('isActive', '==', true).get();
-                if (connectionsSnap.empty) {
-                    return { content: [{ type: "text", text: "No active exchange connections found." }]};
-                }
-                
-                const balances: any = {};
-                for (const doc of connectionsSnap.docs) {
-                    const data = doc.data();
-                    // Setup CCXT
-                    if (data.provider === 'binance' || data.provider === 'bybit') {
-                        try {
-                           const exchangeClass = (ccxt as any)[data.provider];
-                           const apiKey = decrypt(data.apiKeyEncrypted);
-                           const apiSecret = decrypt(data.apiSecretEncrypted);
-                           
-                           const exchange = new exchangeClass({
-                               apiKey,
-                               secret: apiSecret,
-                           });
-                           const balance = await exchange.fetchBalance();
-                           balances[data.provider] = balance.total;
-                        } catch (err: any) {
-                           balances[data.provider] = { error: err.message };
-                        }
-                    }
-                }
-                return { content: [{ type: "text", text: JSON.stringify(balances, null, 2) }] };
-            }
-
-            if (name === "create_trade_proposal") {
-                const proposalRef = db.collection(`users/${userId}/trade_proposals`).doc();
-                await proposalRef.set({
-                    ...args,
-                    status: 'pending_approval',
-                    createdAt: admin.firestore.FieldValue.serverTimestamp()
-                });
-                return { content: [{ type: "text", text: `Proposal created with ID: ${proposalRef.id}` }] };
-            }
-
-            throw new Error(`Unknown tool: ${name}`);
-        });
-
+        const server = createMcpServer(userId);
         await server.connect(transport);
         transports.set(transport.sessionId, transport);
         
         res.on('close', () => {
              transports.delete(transport.sessionId);
+             server.close();
         });
 
     } catch (err: any) {
         console.error("MCP auth error:", err);
-        res.status(401).send('Invalid token');
+        res.status(401).send(err.message);
     }
 });
 

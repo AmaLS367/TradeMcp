@@ -12,7 +12,16 @@ async function startServer() {
 
   // API routes
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
+    const encryptionKey = process.env.ENCRYPTION_KEY || "";
+    res.json({
+      status: "ok",
+      config: {
+        encryptionKeyConfigured: encryptionKey.length === 64,
+        firebaseAdminCredentialsConfigured: Boolean(
+          process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.GOOGLE_APPLICATION_CREDENTIALS
+        ),
+      },
+    });
   });
   
   app.use("/api/mcp", mcpRouter);
