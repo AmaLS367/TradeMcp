@@ -87,10 +87,10 @@ class InMemoryClientsStore {
         return this.clients.get(clientId);
     }
 
-    async registerClient(clientMetadata: OAuthClientMetadata) {
+    async registerClient(clientMetadata: OAuthClientMetadata & { client_id?: string }) {
         const client: OAuthClientInformationFull = {
             ...clientMetadata,
-            client_id: crypto.randomUUID(),
+            client_id: clientMetadata.client_id || crypto.randomUUID(),
             client_id_issued_at: Math.floor(Date.now() / 1000),
             client_secret: clientMetadata.token_endpoint_auth_method === 'none'
                 ? undefined
@@ -276,6 +276,17 @@ function oauthMetadata() {
         grant_types_supported: ['authorization_code', 'refresh_token'],
         scopes_supported: ['mcp:tools'],
     };
+}
+
+function isAllowedOAuthRedirectUri(redirectUri: string) {
+    try {
+        const url = new URL(redirectUri);
+        return url.protocol === 'https:' &&
+            url.hostname === 'chatgpt.com' &&
+            (url.pathname.startsWith('/connector/oauth/') || url.pathname === '/oauth/callback');
+    } catch {
+        return false;
+    }
 }
 
 function isSupportedProvider(provider: unknown): provider is typeof SUPPORTED_PROVIDERS[number] {
@@ -622,6 +633,15 @@ mcpRouter.get('/.well-known/oauth-authorization-server', (_req, res) => {
 
 mcpRouter.post('/register', async (req, res) => {
     try {
+        const redirectUris = Array.isArray(req.body?.redirect_uris) ? req.body.redirect_uris : [];
+        if (!redirectUris.every((uri: unknown) => typeof uri === 'string' && isAllowedOAuthRedirectUri(uri))) {
+            res.status(400).json({
+                error: 'invalid_client_metadata',
+                error_description: 'Only ChatGPT OAuth redirect URIs are allowed',
+            });
+            return;
+        }
+
         const client = await oauthProvider.clientsStore.registerClient(req.body as OAuthClientMetadata);
         res.status(201).json(client);
     } catch (err: any) {
@@ -648,10 +668,19 @@ mcpRouter.get('/authorize', async (req, res) => {
             return;
         }
 
-        const client = await oauthProvider.getClient(clientId);
+        let client = await oauthProvider.getClient(clientId);
         if (!client) {
-            res.status(400).send('Unknown OAuth client');
-            return;
+            if (!isAllowedOAuthRedirectUri(redirectUri)) {
+                res.status(400).send('Unknown OAuth client');
+                return;
+            }
+
+            client = await oauthProvider.clientsStore.registerClient({
+                client_id: clientId,
+                redirect_uris: [redirectUri],
+                token_endpoint_auth_method: 'none',
+                client_name: 'ChatGPT connector',
+            } as OAuthClientMetadata & { client_id: string });
         }
 
         await oauthProvider.authorize(client, {
