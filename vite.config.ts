@@ -5,6 +5,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
+    base: '/trade-mcp/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
