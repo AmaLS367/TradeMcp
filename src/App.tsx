@@ -111,7 +111,7 @@ function MCPSettings({ user }: { user: User }) {
    const [copied, setCopied] = useState("");
    const [error, setError] = useState("");
 
-   const baseUrl = `${window.location.origin}/api/mcp`;
+   const baseUrl = `${window.location.origin}/api/mcp/`;
    const legacySseUrl = `${window.location.origin}/api/mcp/sse`;
 
    useEffect(() => {
