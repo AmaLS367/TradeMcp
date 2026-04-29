@@ -9,7 +9,7 @@ Use a public HTTPS URL. ChatGPT and Claude connect from their cloud infrastructu
 Preferred remote MCP endpoint:
 
 ```text
-https://YOUR_DOMAIN/api/mcp
+https://YOUR_DOMAIN/api/mcp/
 ```
 
 Legacy SSE endpoint for older MCP clients:
@@ -28,7 +28,7 @@ https://YOUR_DOMAIN/api/mcp/sse
 6. Paste the generated URL:
 
 ```text
-https://YOUR_DOMAIN/api/mcp?key=YOUR_KEY
+https://YOUR_DOMAIN/api/mcp/?key=YOUR_KEY
 ```
 
 Do not choose OAuth. This project does not implement an OAuth authorization server.
@@ -38,7 +38,7 @@ Do not choose OAuth. This project does not implement an OAuth authorization serv
 For Claude remote MCP/API clients, use:
 
 ```text
-https://YOUR_DOMAIN/api/mcp
+https://YOUR_DOMAIN/api/mcp/
 ```
 
 Pass the generated key as a bearer token:
