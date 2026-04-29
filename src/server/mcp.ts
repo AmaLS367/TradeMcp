@@ -371,7 +371,7 @@ function assertMethodCallable(exchange: any, method: unknown): asserts method is
 function createMcpServer(userId: string | null) {
     const server = new Server({
         name: "TradeMCPServer",
-        version: "1.0.0"
+        version: "1.1.0"
     }, {
         capabilities: {
             tools: {}
