@@ -228,6 +228,8 @@ function ExchangeConnections({ user }: { user: User }) {
   const [provider, setProvider] = useState('binance');
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
+  const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
+  const [validationError, setValidationError] = useState<string>('');
 
   useEffect(() => {
     const q = query(collection(db, `users/${user.uid}/exchange_connections`));
@@ -240,26 +242,61 @@ function ExchangeConnections({ user }: { user: User }) {
 
   const handleAdd = async (e: React.FormEvent) => {
       e.preventDefault();
+      
+      // Сначала валидируем ключи
+      setValidationStatus('validating');
+      setValidationError('');
+      
       try {
-          const idToken = await user.getIdToken();
-          const response = await fetch('/api/mcp/connections', {
-              method: 'POST',
-              headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${idToken}`
-              },
-              body: JSON.stringify({ provider, apiKey, apiSecret })
-          });
-          
-          if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(errorText || 'Failed to add connection');
-          }
-          
-          setApiKey('');
-          setApiSecret('');
+        const idToken = await user.getIdToken();
+        const validateResponse = await fetch('/api/validate-keys', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({ 
+            exchange: provider, 
+            apiKey, 
+            apiSecret 
+          })
+        });
+        
+        const validateResult = await validateResponse.json();
+        
+        if (!validateResult.valid) {
+          setValidationStatus('invalid');
+          setValidationError(validateResult.error || 'Неизвестная ошибка валидации');
+          alert(`Ошибка валидации ключей: ${validateResult.error}`);
+          return;
+        }
+        
+        setValidationStatus('valid');
+        
+        // Если валидация успешна, добавляем подключение
+        const response = await fetch('/api/mcp/connections', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${idToken}`
+            },
+            body: JSON.stringify({ provider, apiKey, apiSecret })
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || 'Failed to add connection');
+        }
+        
+        setApiKey('');
+        setApiSecret('');
+        setValidationStatus('idle');
+        setValidationError('');
+        alert('Ключи успешно проверены и подключение добавлено!');
       } catch (err: any) {
           console.error('Error adding connection:', err);
+          setValidationStatus('invalid');
+          setValidationError(err.message);
           alert(err.message);
       }
   };
@@ -318,7 +355,22 @@ function ExchangeConnections({ user }: { user: User }) {
                          <Label>API Secret</Label>
                          <Input type="password" value={apiSecret} onChange={e => setApiSecret(e.target.value)} required />
                     </div>
-                    <Button type="submit" className="w-full">Save Connection</Button>
+                    {validationStatus === 'validating' && (
+                      <div className="text-sm text-blue-600">Проверка ключей...</div>
+                    )}
+                    {validationStatus === 'valid' && (
+                      <div className="text-sm text-green-600">✓ Ключи успешно проверены</div>
+                    )}
+                    {validationStatus === 'invalid' && validationError && (
+                      <div className="text-sm text-red-600">✗ {validationError}</div>
+                    )}
+                    <Button 
+                      type="submit" 
+                      className="w-full" 
+                      disabled={validationStatus === 'validating'}
+                    >
+                      {validationStatus === 'validating' ? 'Проверка...' : 'Save Connection'}
+                    </Button>
                 </form>
             </CardContent>
         </Card>
