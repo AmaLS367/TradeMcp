@@ -6,3 +6,19 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Added by code-review-graph
+.code-review-graph/
+.cursor/
+.kiro/
+.claude/
+.gemini/
+.mcp.json
+.opencode.json
+.windsurfrules
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.qodo/
+.cursorrules
+TASKS.md
