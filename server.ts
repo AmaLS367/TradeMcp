@@ -3,6 +3,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { mcpRouter, mcpWellKnownRouter } from "./src/server/mcp.js";
+import { validateExchangeKeys } from "./src/server/exchangeValidator.js";
 
 async function startServer() {
   const app = express();
@@ -24,6 +25,36 @@ async function startServer() {
     });
   });
   
+  // Endpoint для валидации API ключей бирж
+  app.post("/api/validate-keys", async (req, res) => {
+    try {
+      const { exchange, apiKey, apiSecret } = req.body;
+
+      if (!exchange || !apiKey || !apiSecret) {
+        return res.status(400).json({
+          valid: false,
+          error: 'Необходимо указать exchange, apiKey и apiSecret',
+        });
+      }
+
+      if (exchange !== 'binance' && exchange !== 'bybit') {
+        return res.status(400).json({
+          valid: false,
+          error: 'Поддерживаются только binance и bybit',
+        });
+      }
+
+      const result = await validateExchangeKeys(exchange, apiKey, apiSecret);
+      res.json(result);
+    } catch (error: any) {
+      console.error('Ошибка при валидации ключей:', error);
+      res.status(500).json({
+        valid: false,
+        error: 'Внутренняя ошибка сервера при валидации',
+      });
+    }
+  });
+
   app.use(mcpWellKnownRouter);
   app.use("/api/mcp", mcpRouter);
 
