@@ -1,20 +1,107 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Trade MCP
 
-# Run and deploy your AI Studio app
+Remote MCP server for crypto exchange balances and human-approved trade proposals.
 
-This contains everything you need to run your app locally.
+## What URL to use
 
-View your app in AI Studio: https://ai.studio/apps/7878b980-adf3-47dd-b2ef-ce71f9890c7d
+Use a public HTTPS URL. ChatGPT and Claude connect from their cloud infrastructure, so `localhost` and private LAN URLs will not work.
 
-## Run Locally
+Preferred remote MCP endpoint:
 
-**Prerequisites:**  Node.js
+```text
+https://YOUR_DOMAIN/api/mcp
+```
 
+Legacy SSE endpoint for older MCP clients:
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```text
+https://YOUR_DOMAIN/api/mcp/sse
+```
+
+## ChatGPT
+
+1. Open the web dashboard.
+2. Sign in with Google.
+3. Go to `Settings & MCP`.
+4. Generate an API key.
+5. In ChatGPT connector setup, choose `No authentication`.
+6. Paste the generated URL:
+
+```text
+https://YOUR_DOMAIN/api/mcp?key=YOUR_KEY
+```
+
+Do not choose OAuth. This project does not implement an OAuth authorization server.
+
+## Claude
+
+For Claude remote MCP/API clients, use:
+
+```text
+https://YOUR_DOMAIN/api/mcp
+```
+
+Pass the generated key as a bearer token:
+
+```text
+Authorization: Bearer YOUR_KEY
+```
+
+If the client only supports SSE, use:
+
+```text
+https://YOUR_DOMAIN/api/mcp/sse?key=YOUR_KEY
+```
+
+## Environment
+
+Create `.env` from `.env.example`.
+
+Required:
+
+```text
+ENCRYPTION_KEY=64_character_hex_key
+FIREBASE_SERVICE_ACCOUNT_KEY='{"type":"service_account","project_id":"..."}'
+```
+
+Generate `ENCRYPTION_KEY`:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Optional:
+
+```text
+PORT=3000
+```
+
+## Run
+
+```bash
+npm install
+npm run dev
+```
+
+Production:
+
+```bash
+npm run build
+npm start
+```
+
+Docker:
+
+```bash
+docker compose up -d --build
+```
+
+## MCP tools
+
+`get_account_summary`
+
+Returns balances from active Binance/Bybit connections. Read-only.
+
+`create_trade_proposal`
+
+Creates a pending trade proposal in the dashboard. The proposal must be approved by the user before execution.
