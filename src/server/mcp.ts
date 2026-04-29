@@ -57,7 +57,7 @@ if (!admin.apps.length) {
 
 const db = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
 
-function createMcpServer(userId: string) {
+function createMcpServer(userId: string | null) {
     const server = new Server({
         name: "TradeMCPServer",
         version: "1.0.0"
@@ -107,6 +107,15 @@ function createMcpServer(userId: string) {
         const { name, arguments: args } = request.params;
 
         if (name === "get_account_summary") {
+            if (!userId) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: "Trade MCP is connected. No dashboard user is bound to this public MCP endpoint yet, so account balances are unavailable."
+                    }]
+                };
+            }
+
             const connectionsSnap = await db.collection(`users/${userId}/exchange_connections`).where('isActive', '==', true).get();
             if (connectionsSnap.empty) {
                 return { content: [{ type: "text", text: "No active exchange connections found." }]};
@@ -136,6 +145,15 @@ function createMcpServer(userId: string) {
         }
 
         if (name === "create_trade_proposal") {
+            if (!userId) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: "Trade MCP is connected, but no dashboard user is bound to this public MCP endpoint. Trade proposals cannot be created until DEFAULT_MCP_USER_ID is configured on the server."
+                    }]
+                };
+            }
+
             const proposalRef = db.collection(`users/${userId}/trade_proposals`).doc();
             await proposalRef.set({
                 ...args,
@@ -171,6 +189,7 @@ function getApiKey(req: express.Request) {
 }
 
 async function userIdFromMcpRequest(req: express.Request) {
+    const defaultUserId = process.env.DEFAULT_MCP_USER_ID?.trim();
     const token = req.query.token as string | undefined;
     if (token) {
         const decoded = await admin.auth().verifyIdToken(token);
@@ -179,7 +198,7 @@ async function userIdFromMcpRequest(req: express.Request) {
 
     const apiKey = getApiKey(req);
     if (!apiKey) {
-        throw new Error('Missing auth');
+        return defaultUserId || null;
     }
 
     const snap = await db.collectionGroup('api_keys').where('key', '==', apiKey).limit(1).get();

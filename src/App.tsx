@@ -97,7 +97,7 @@ function AuthGuard() {
           </TabsContent>
 
           <TabsContent value="settings">
-             <MCPSettings user={user} />
+             <MCPSettings />
           </TabsContent>
         </Tabs>
       </main>
@@ -105,45 +105,10 @@ function AuthGuard() {
   );
 }
 
-function MCPSettings({ user }: { user: User }) {
-   const [apiKeys, setApiKeys] = useState<any[]>([]);
-   const [newKeyLabel, setNewKeyLabel] = useState("");
+function MCPSettings() {
    const [copied, setCopied] = useState("");
-   const [error, setError] = useState("");
 
-   const baseUrl = `${window.location.origin}/api/mcp/`;
-
-   useEffect(() => {
-       const unsub = onSnapshot(
-           collection(db, `users/${user.uid}/api_keys`),
-           snap => setApiKeys(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-       );
-       return unsub;
-   }, [user.uid]);
-
-   const handleGenerate = async () => {
-       try {
-           const idToken = await user.getIdToken();
-           const res = await fetch('/api/mcp/keys', {
-               method: 'POST',
-               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
-               body: JSON.stringify({ label: newKeyLabel || 'Default' }),
-           });
-           if (!res.ok) throw new Error(await res.text());
-           setNewKeyLabel("");
-       } catch (err: any) {
-           setError(err.message);
-       }
-   };
-
-   const handleRevoke = async (id: string) => {
-       if (!confirm('Revoke this key?')) return;
-       const idToken = await user.getIdToken();
-       await fetch(`/api/mcp/keys/${id}`, {
-           method: 'DELETE',
-           headers: { 'Authorization': `Bearer ${idToken}` },
-       });
-   };
+   const baseUrl = "https://vmi3245942.contaboserver.net/api/mcp/";
 
    const handleCopy = (text: string, key: string) => {
        navigator.clipboard.writeText(text);
@@ -167,44 +132,8 @@ function MCPSettings({ user }: { user: User }) {
                        </Button>
                    </div>
                    <p className="text-xs text-gray-500">
-                       Один endpoint для всех клиентов. OAuth тут не используется.
+                       Один endpoint для всех клиентов. Ключ и OAuth не нужны для подключения.
                    </p>
-               </div>
-
-               <div className="space-y-3">
-                   <Label className="font-semibold">API Keys</Label>
-                   <div className="flex gap-2">
-                       <Input
-                           placeholder="Label (e.g. ChatGPT)"
-                           value={newKeyLabel}
-                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewKeyLabel(e.target.value)}
-                       />
-                       <Button onClick={handleGenerate}>Generate</Button>
-                   </div>
-                   {error && <p className="text-red-500 text-sm">{error}</p>}
-
-                   {apiKeys.length === 0 && (
-                       <p className="text-sm text-gray-400">Нет ключей. Создай первый.</p>
-                   )}
-
-                   <div className="space-y-2">
-                       {apiKeys.map(k => {
-                           return (
-                               <div key={k.id} className="border rounded p-3 space-y-2">
-                                   <div className="flex items-center justify-between">
-                                       <span className="font-medium text-sm">{k.label}</span>
-                                       <Button variant="outline" size="sm" className="text-red-600 border-red-200" onClick={() => handleRevoke(k.id)}>Revoke</Button>
-                                   </div>
-                                   <div className="flex items-center gap-2">
-                                       <input readOnly className="flex-1 text-xs font-mono bg-slate-50 border rounded px-2 py-1" value={k.key} />
-                                       <Button variant="outline" size="sm" onClick={() => handleCopy(k.key, k.id)}>
-                                           {copied === k.id ? 'Copied!' : 'Copy Key'}
-                                       </Button>
-                                   </div>
-                               </div>
-                           );
-                       })}
-                   </div>
                </div>
            </CardContent>
        </Card>

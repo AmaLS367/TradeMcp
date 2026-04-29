@@ -17,20 +17,13 @@ https://vmi3245942.contaboserver.net/api/mcp/
 1. Open the web dashboard.
 2. Sign in with Google.
 3. Go to `Settings & MCP`.
-4. Generate an API key.
-5. Use this MCP server URL:
+4. Use this MCP server URL:
 
 ```text
 https://vmi3245942.contaboserver.net/api/mcp/
 ```
 
-6. Use the generated key as the MCP API key or bearer token when the client supports it:
-
-```text
-Authorization: Bearer YOUR_KEY
-```
-
-OAuth is not implemented in this project.
+No API key and no OAuth are required for connector setup.
 
 ## Environment
 
