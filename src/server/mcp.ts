@@ -77,17 +77,25 @@ type StoredToken = {
     userId: string;
     scopes: string[];
     expiresAt: number;
-    resource?: URL;
+    resource?: string; // Store as string for Firestore
 };
 
-class InMemoryClientsStore {
-    private clients = new Map<string, OAuthClientInformationFull>();
+class FirestoreClientsStore {
+    private collection: FirebaseFirestore.CollectionReference;
 
-    async getClient(clientId: string) {
-        return this.clients.get(clientId);
+    constructor(db: FirebaseFirestore.Firestore) {
+        this.collection = db.collection('oauth_clients');
     }
 
-    async registerClient(clientMetadata: OAuthClientMetadata & { client_id?: string }) {
+    async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
+        const doc = await this.collection.doc(clientId).get();
+        if (!doc.exists) {
+            return undefined;
+        }
+        return doc.data() as OAuthClientInformationFull;
+    }
+
+    async registerClient(clientMetadata: OAuthClientMetadata & { client_id?: string }): Promise<OAuthClientInformationFull> {
         const client: OAuthClientInformationFull = {
             ...clientMetadata,
             client_id: clientMetadata.client_id || crypto.randomUUID(),
@@ -97,19 +105,23 @@ class InMemoryClientsStore {
                 : crypto.randomBytes(32).toString('hex'),
             client_secret_expires_at: 0,
         };
-        this.clients.set(client.client_id, client);
+        await this.collection.doc(client.client_id).set(client);
         return client;
     }
 }
 
 class FirebaseOAuthProvider implements OAuthServerProvider {
-    readonly clientsStore = new InMemoryClientsStore();
-    private pending = new Map<string, PendingAuthorization>();
-    private codes = new Map<string, AuthorizationCode>();
-    private accessTokens = new Map<string, StoredToken>();
-    private refreshTokens = new Map<string, StoredToken>();
+    readonly clientsStore: FirestoreClientsStore;
+    private pendingCollection: FirebaseFirestore.CollectionReference;
+    private codesCollection: FirebaseFirestore.CollectionReference;
+    private tokensCollection: FirebaseFirestore.CollectionReference;
 
-    constructor(private readonly publicBaseUrl: string) {}
+    constructor(private readonly publicBaseUrl: string, db: FirebaseFirestore.Firestore) {
+        this.clientsStore = new FirestoreClientsStore(db);
+        this.pendingCollection = db.collection('oauth_pending');
+        this.codesCollection = db.collection('oauth_codes');
+        this.tokensCollection = db.collection('oauth_tokens');
+    }
 
     async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: express.Response) {
         if (!isRegisteredRedirectUri(client, params.redirectUri)) {
@@ -117,11 +129,12 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
         }
 
         const requestId = crypto.randomUUID();
-        this.pending.set(requestId, {
+        const pendingData: PendingAuthorization = {
             client,
             params,
             expiresAt: Date.now() + 10 * 60 * 1000,
-        });
+        };
+        await this.pendingCollection.doc(requestId).set(pendingData);
 
         const target = new URL('/trade-mcp/', this.publicBaseUrl);
         target.searchParams.set('oauth_request', requestId);
@@ -129,19 +142,26 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
     }
 
     async completeAuthorization(requestId: string, userId: string) {
-        const pending = this.pending.get(requestId);
-        if (!pending || pending.expiresAt < Date.now()) {
-            this.pending.delete(requestId);
+        const pendingDoc = await this.pendingCollection.doc(requestId).get();
+        if (!pendingDoc.exists) {
+            throw new Error('OAuth authorization request expired or not found');
+        }
+        const pending = pendingDoc.data() as PendingAuthorization;
+        
+        if (pending.expiresAt < Date.now()) {
+            await this.pendingCollection.doc(requestId).delete();
             throw new Error('OAuth authorization request expired');
         }
 
         const code = crypto.randomUUID();
-        this.pending.delete(requestId);
-        this.codes.set(code, {
+        await this.pendingCollection.doc(requestId).delete();
+        
+        const codeData: AuthorizationCode = {
             ...pending,
             userId,
             expiresAt: Date.now() + 5 * 60 * 1000,
-        });
+        };
+        await this.codesCollection.doc(code).set(codeData);
 
         const redirectUrl = new URL(pending.params.redirectUri);
         redirectUrl.searchParams.set('code', code);
@@ -165,28 +185,37 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
     }
 
     async exchangeAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string, _codeVerifier?: string, redirectUri?: string, resource?: URL): Promise<OAuthTokens> {
-        const code = this.getCode(client, authorizationCode);
+        const code = await this.getCode(client, authorizationCode);
         if (redirectUri && redirectUri !== code.params.redirectUri) {
             throw new Error('redirect_uri mismatch');
         }
-        this.codes.delete(authorizationCode);
+        await this.codesCollection.doc(authorizationCode).delete();
 
-        return this.issueTokens(client.client_id, code.userId, code.params.scopes || [], resource || code.params.resource);
+        return this.issueTokens(client.client_id, code.userId, code.params.scopes || [], resource?.toString() || code.params.resource?.toString());
     }
 
     async exchangeRefreshToken(client: OAuthClientInformationFull, refreshToken: string, scopes?: string[], resource?: URL): Promise<OAuthTokens> {
-        const token = this.refreshTokens.get(refreshToken);
-        if (!token || token.clientId !== client.client_id) {
+        const tokenDoc = await this.tokensCollection.doc(`refresh_${refreshToken}`).get();
+        if (!tokenDoc.exists) {
+            throw new Error('Invalid refresh token');
+        }
+        const token = tokenDoc.data() as StoredToken;
+        if (token.clientId !== client.client_id) {
             throw new Error('Invalid refresh token');
         }
 
-        return this.issueTokens(client.client_id, token.userId, scopes || token.scopes, resource || token.resource);
+        return this.issueTokens(client.client_id, token.userId, scopes || token.scopes, resource?.toString() || token.resource);
     }
 
     async verifyAccessToken(token: string): Promise<AuthInfo> {
-        const stored = this.accessTokens.get(token);
-        if (!stored || stored.expiresAt < Date.now()) {
-            this.accessTokens.delete(token);
+        const tokenDoc = await this.tokensCollection.doc(`access_${token}`).get();
+        if (!tokenDoc.exists) {
+            throw new Error('Invalid or expired access token');
+        }
+        const stored = tokenDoc.data() as StoredToken;
+        
+        if (stored.expiresAt < Date.now()) {
+            await this.tokensCollection.doc(`access_${token}`).delete();
             throw new Error('Invalid or expired access token');
         }
 
@@ -195,20 +224,25 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
             clientId: stored.clientId,
             scopes: stored.scopes,
             expiresAt: Math.floor(stored.expiresAt / 1000),
-            resource: stored.resource,
+            resource: stored.resource ? new URL(stored.resource) : undefined,
             extra: { userId: stored.userId },
         };
     }
 
     async revokeToken(_client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest) {
-        this.accessTokens.delete(request.token);
-        this.refreshTokens.delete(request.token);
+        await this.tokensCollection.doc(`access_${request.token}`).delete();
+        await this.tokensCollection.doc(`refresh_${request.token}`).delete();
     }
 
-    private getCode(client: OAuthClientInformationFull, authorizationCode: string) {
-        const code = this.codes.get(authorizationCode);
-        if (!code || code.expiresAt < Date.now()) {
-            this.codes.delete(authorizationCode);
+    private async getCode(client: OAuthClientInformationFull, authorizationCode: string) {
+        const codeDoc = await this.codesCollection.doc(authorizationCode).get();
+        if (!codeDoc.exists) {
+            throw new Error('Invalid or expired authorization code');
+        }
+        const code = codeDoc.data() as AuthorizationCode;
+        
+        if (code.expiresAt < Date.now()) {
+            await this.codesCollection.doc(authorizationCode).delete();
             throw new Error('Invalid or expired authorization code');
         }
         if (code.client.client_id !== client.client_id) {
@@ -217,7 +251,7 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
         return code;
     }
 
-    private issueTokens(clientId: string, userId: string, scopes: string[], resource?: URL): OAuthTokens {
+    private async issueTokens(clientId: string, userId: string, scopes: string[], resource?: string): Promise<OAuthTokens> {
         const accessToken = crypto.randomBytes(32).toString('hex');
         const refreshToken = crypto.randomBytes(32).toString('hex');
         const expiresAt = Date.now() + 60 * 60 * 1000;
@@ -229,8 +263,12 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
             expiresAt,
             resource,
         };
-        this.accessTokens.set(accessToken, stored);
-        this.refreshTokens.set(refreshToken, {
+        
+        // Store access token in Firestore
+        await this.tokensCollection.doc(`access_${accessToken}`).set(stored);
+        
+        // Store refresh token in Firestore with longer expiry
+        await this.tokensCollection.doc(`refresh_${refreshToken}`).set({
             ...stored,
             token: refreshToken,
             expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
@@ -248,7 +286,7 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
 
 const publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://vmi3245942.contaboserver.net';
 const mcpServerUrl = new URL('/api/mcp/', publicBaseUrl);
-const oauthProvider = new FirebaseOAuthProvider(publicBaseUrl);
+const oauthProvider = new FirebaseOAuthProvider(publicBaseUrl, db);
 const resourceMetadataUrl = new URL('/api/mcp/.well-known/oauth-protected-resource', publicBaseUrl).href;
 const SUPPORTED_PROVIDERS = ['binance', 'bybit'] as const;
 const MAX_TOOL_RESPONSE_CHARS = 60_000;
