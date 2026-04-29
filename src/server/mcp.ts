@@ -9,8 +9,12 @@ import crypto from 'crypto';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // --- Encryption Helpers ---
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || ""; // Should be 64 hex chars (32 bytes)
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "";
 const ALGORITHM = 'aes-256-gcm';
+
+if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 64) {
+    throw new Error('ENCRYPTION_KEY must be a 64-character hex string. Generate: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+}
 
 function encrypt(text: string) {
     if (!ENCRYPTION_KEY) throw new Error("ENCRYPTION_KEY not set");
@@ -259,36 +263,33 @@ db.collectionGroup('trade_proposals')
                 if (!userId) continue;
 
                 try {
-                    // ATOMIC STATUS UPDATE to prevent double execution
                     await doc.ref.update({
                         status: 'executing',
                         executionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
                     });
+                } catch (claimErr: any) {
+                    console.error("Failed to claim proposal, skipping:", claimErr);
+                    continue;
+                }
 
-                    // Fetch the user's exchange connection
+                try {
                     const connRef = db.collection(`users/${userId}/exchange_connections`)
                                         .where('provider', '==', data.provider)
                                         .where('isActive', '==', true)
                                         .limit(1);
                     const connSnap = await connRef.get();
-                    
+
                     if (connSnap.empty) {
                         throw new Error(`Active connection for ${data.provider} not found`);
                     }
-                    
-                    const connData = connSnap.docs[0].data();
-                    
-                    // CCXT Execution
-                    const exchangeClass = (ccxt as any)[data.provider];
-                    const apiKey = decrypt(connData.apiKeyEncrypted);
-                    const apiSecret = decrypt(connData.apiSecretEncrypted);
 
+                    const connData = connSnap.docs[0].data();
+                    const exchangeClass = (ccxt as any)[data.provider];
                     const exchange = new exchangeClass({
-                        apiKey,
-                        secret: apiSecret,
+                        apiKey: decrypt(connData.apiKeyEncrypted),
+                        secret: decrypt(connData.apiSecretEncrypted),
                     });
 
-                    // Execute trade
                     let order;
                     if (data.orderType === 'market') {
                         order = await exchange.createMarketOrder(data.symbol, data.side, data.quantity);
@@ -298,7 +299,6 @@ db.collectionGroup('trade_proposals')
                         throw new Error('Invalid order type or missing price');
                     }
 
-                    // Update Proposal
                     await doc.ref.update({
                         status: 'executed',
                         executionResult: JSON.stringify(order),
@@ -306,7 +306,6 @@ db.collectionGroup('trade_proposals')
                         executedAt: admin.firestore.FieldValue.serverTimestamp()
                     });
 
-                    // Audit Log
                     await db.collection(`users/${userId}/audit_logs`).add({
                         eventType: 'trade_executed',
                         source: 'execution_engine',
@@ -316,8 +315,6 @@ db.collectionGroup('trade_proposals')
 
                 } catch (err: any) {
                     console.error("Execution error:", err);
-                    // Only update if it wasn't already successfully executed by someone else
-                    // (though with 'executing' status update it's unlikely)
                     await doc.ref.update({
                         status: 'failed',
                         executionResult: err.message,
