@@ -108,6 +108,9 @@ function AuthGuard() {
 function MCPSettings({ user }: { user: User }) {
    const [token, setToken] = useState("");
    const [error, setError] = useState("");
+   const [serverName, setServerName] = useState("trade-mcp");
+   const [serverUrl, setServerUrl] = useState(`${window.location.origin}/api/mcp/sse`);
+   const [copied, setCopied] = useState("");
 
    const handleGetToken = async () => {
        try {
@@ -118,31 +121,60 @@ function MCPSettings({ user }: { user: User }) {
        }
    };
 
+   const fullUrl = token ? `${serverUrl}?token=${token}` : `${serverUrl}?token=<YOUR_TOKEN>`;
+
+   const claudeConfig = JSON.stringify({
+       mcpServers: { [serverName]: { type: "sse", url: fullUrl } }
+   }, null, 2);
+
+   const handleCopy = (text: string, key: string) => {
+       navigator.clipboard.writeText(text);
+       setCopied(key);
+       setTimeout(() => setCopied(""), 2000);
+   };
+
    return (
        <Card>
            <CardHeader>
                <CardTitle>MCP Server Configuration</CardTitle>
-               <CardDescription>Configure your LLM client with this MCP Server</CardDescription>
+               <CardDescription>Configure your LLM client to connect to this MCP Server</CardDescription>
            </CardHeader>
-           <CardContent className="space-y-4">
-               <div>
-                  <h3 className="font-medium mb-1">Server Type</h3>
-                  <p className="text-sm text-gray-600">SSE (Server-Sent Events)</p>
+           <CardContent className="space-y-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div className="space-y-2">
+                       <Label>Server Name</Label>
+                       <Input value={serverName} onChange={e => setServerName(e.target.value)} placeholder="trade-mcp" />
+                   </div>
+                   <div className="space-y-2">
+                       <Label>Server URL</Label>
+                       <Input value={serverUrl} onChange={e => setServerUrl(e.target.value)} />
+                   </div>
                </div>
-               <div>
-                  <h3 className="font-medium mb-1">URL</h3>
-                  <code className="bg-slate-100 px-2 py-1 rounded text-sm">{window.location.origin}/api/mcp/sse?token=&lt;YOUR_TOKEN&gt;</code>
-               </div>
-               <div>
-                   <h3 className="font-medium mb-2">Generate Token</h3>
-                   <Button onClick={handleGetToken}>Get Temporary Token</Button>
-                   {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+
+               <div className="space-y-2">
+                   <Label>Auth Token (valid 1 hour)</Label>
+                   <div className="flex gap-2">
+                       <Button onClick={handleGetToken}>Generate Token</Button>
+                       {token && (
+                           <Button variant="outline" onClick={() => handleCopy(token, 'token')}>
+                               {copied === 'token' ? 'Copied!' : 'Copy Token'}
+                           </Button>
+                       )}
+                   </div>
+                   {error && <p className="text-red-500 text-sm">{error}</p>}
                    {token && (
-                       <div className="mt-4 break-all">
-                           <Label>Your Auth Token (Valid for 1 Hour):</Label>
-                           <textarea readOnly className="w-full mt-1 p-2 border rounded font-mono text-xs h-32" value={token}></textarea>
-                       </div>
+                       <textarea readOnly className="w-full mt-1 p-2 border rounded font-mono text-xs h-20 break-all" value={token} />
                    )}
+               </div>
+
+               <div className="space-y-2">
+                   <div className="flex items-center justify-between">
+                       <Label>Claude Desktop / Cursor / Windsurf config</Label>
+                       <Button variant="outline" size="sm" onClick={() => handleCopy(claudeConfig, 'config')}>
+                           {copied === 'config' ? 'Copied!' : 'Copy'}
+                       </Button>
+                   </div>
+                   <textarea readOnly className="w-full p-2 border rounded font-mono text-xs h-36" value={claudeConfig} />
                </div>
            </CardContent>
        </Card>
