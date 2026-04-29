@@ -1,0 +1,104 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Primitive Definition
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    match /users/{userId} {
+      // User Profile Validation
+      function isValidUser(data) {
+        return data.keys().size() == 2 &&
+               data.keys().hasAll(['email', 'createdAt']) &&
+               data.email is string && data.email.size() <= 256 &&
+               data.createdAt == request.time;
+      }
+
+      allow get: if isVerified() && request.auth.uid == userId;
+      allow list: if false; // No blanket listing of users
+      // Users can create their own profile, but cannot change it afterwards
+      allow create: if isVerified() && isValidId(userId) && request.auth.uid == userId && isValidUser(incoming());
+      allow update, delete: if false;
+
+      match /exchange_connections/{connectionId} {
+        function isValidConnection(data) {
+          return data.keys().size() == 5 &&
+                 data.keys().hasAll(['provider', 'apiKeyEncrypted', 'apiSecretEncrypted', 'isActive', 'createdAt']) &&
+                 data.provider is string && data.provider in ['binance', 'bybit'] &&
+                 data.apiKeyEncrypted is string && data.apiKeyEncrypted.size() <= 1024 &&
+                 data.apiSecretEncrypted is string && data.apiSecretEncrypted.size() <= 1024 &&
+                 data.isActive is bool &&
+                 data.createdAt == request.time;
+        }
+        function isValidConnectionUpdate(data) {
+           // We only allow deleting or deactivating connection from client
+           return data.isActive is bool;
+        }
+
+        allow read: if isVerified() && request.auth.uid == userId;
+        allow create: if isVerified() && request.auth.uid == userId && isValidId(connectionId) && isValidConnection(incoming());
+        // Only allow updating isActive. API keys must be re-created if changed.
+        allow update: if isVerified() && request.auth.uid == userId && 
+                         isValidConnectionUpdate(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['isActive']);
+        allow delete: if isVerified() && request.auth.uid == userId;
+      }
+
+      match /policies/{policyId} {
+        function isValidPolicy(data) {
+          return data.keys().size() == 5 &&
+                 data.keys().hasAll(['maxOrderNotional', 'allowedSymbols', 'allowedActions', 'autoExecutionEnabled', 'updatedAt']) &&
+                 data.maxOrderNotional is number &&
+                 data.allowedSymbols is list && data.allowedSymbols.size() <= 100 &&
+                 data.allowedActions is list && data.allowedActions.size() <= 10 &&
+                 data.autoExecutionEnabled is bool &&
+                 data.updatedAt == request.time;
+        }
+
+        allow read: if isVerified() && request.auth.uid == userId;
+        // User can create or update their policy
+        allow create: if isVerified() && request.auth.uid == userId && isValidId(policyId) && isValidPolicy(incoming());
+        allow update: if isVerified() && request.auth.uid == userId && 
+                         isValidPolicy(incoming()) && 
+                         incoming().diff(existing()).affectedKeys().hasOnly(['maxOrderNotional', 'allowedSymbols', 'allowedActions', 'autoExecutionEnabled', 'updatedAt']);
+      }
+
+      match /trade_proposals/{proposalId} {
+        // Validation for user actions: users only approve or reject.
+        // They cannot modify the actual proposal parameters.
+        function isReviewAction() {
+            return incoming().status in ['approved', 'rejected'] &&
+                   existing().status == 'pending_approval' &&
+                   incoming().approvedAt == request.time;
+        }
+
+        // The user can read their proposals.
+        // Only the backend (Admin SDK) should create proposals.
+        // Only the backend (Admin SDK) updates proposals to executed.
+        allow read: if isVerified() && request.auth.uid == userId;
+        
+        allow update: if isVerified() && request.auth.uid == userId &&
+          // Action: Review Proposal (Approve/Reject)
+          (
+             isReviewAction() &&
+             incoming().diff(existing()).affectedKeys().hasOnly(['status', 'approvedAt'])
+          );
+          // Delete is forbidden from client, Create is forbidden from client.
+      }
+
+      match /audit_logs/{logId} {
+        // Audit logs are read-only for the user. Written by Admin SDK.
+        allow read: if isVerified() && request.auth.uid == userId;
+      }
+    }
+  }
+}
