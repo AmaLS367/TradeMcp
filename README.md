@@ -2,56 +2,35 @@
 
 Remote MCP server for crypto exchange balances and human-approved trade proposals.
 
-## What URL to use
+## MCP URL
 
 Use a public HTTPS URL. ChatGPT and Claude connect from their cloud infrastructure, so `localhost` and private LAN URLs will not work.
 
-Preferred remote MCP endpoint:
+Use this endpoint everywhere:
 
 ```text
-https://YOUR_DOMAIN/api/mcp/
+https://vmi3245942.contaboserver.net/api/mcp/
 ```
 
-Legacy SSE endpoint for older MCP clients:
-
-```text
-https://YOUR_DOMAIN/api/mcp/sse
-```
-
-## ChatGPT
+## Connect
 
 1. Open the web dashboard.
 2. Sign in with Google.
 3. Go to `Settings & MCP`.
 4. Generate an API key.
-5. In ChatGPT connector setup, choose `No authentication`.
-6. Paste the generated URL:
+5. Use this MCP server URL:
 
 ```text
-https://YOUR_DOMAIN/api/mcp/?key=YOUR_KEY
+https://vmi3245942.contaboserver.net/api/mcp/
 ```
 
-Do not choose OAuth. This project does not implement an OAuth authorization server.
-
-## Claude
-
-For Claude remote MCP/API clients, use:
-
-```text
-https://YOUR_DOMAIN/api/mcp/
-```
-
-Pass the generated key as a bearer token:
+6. Use the generated key as the MCP API key or bearer token when the client supports it:
 
 ```text
 Authorization: Bearer YOUR_KEY
 ```
 
-If the client only supports SSE, use:
-
-```text
-https://YOUR_DOMAIN/api/mcp/sse?key=YOUR_KEY
-```
+OAuth is not implemented in this project.
 
 ## Environment
 
