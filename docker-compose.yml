@@ -1,0 +1,12 @@
+services:
+  trade_mcp:
+    build: .
+    container_name: trade_mcp
+    env_file: .env
+    restart: unless-stopped
+    networks:
+      - amaexecutioncore_default
+
+networks:
+  amaexecutioncore_default:
+    external: true
