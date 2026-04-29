@@ -80,3 +80,11 @@ Returns balances from active Binance/Bybit connections. Read-only.
 `create_trade_proposal`
 
 Creates a pending trade proposal in the dashboard. The proposal must be approved by the user before execution.
+
+`list_exchange_methods`
+
+Lists callable CCXT methods for `binance` or `bybit`, including unified and raw exchange-specific methods.
+
+`call_exchange_method`
+
+Calls any callable CCXT method on the authenticated user's Binance or Bybit connection. Pass method arguments exactly as CCXT expects.

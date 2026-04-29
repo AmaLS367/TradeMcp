@@ -250,6 +250,8 @@ const publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://vmi3245942.contabo
 const mcpServerUrl = new URL('/api/mcp/', publicBaseUrl);
 const oauthProvider = new FirebaseOAuthProvider(publicBaseUrl);
 const resourceMetadataUrl = new URL('/api/mcp/.well-known/oauth-protected-resource', publicBaseUrl).href;
+const SUPPORTED_PROVIDERS = ['binance', 'bybit'] as const;
+const MAX_TOOL_RESPONSE_CHARS = 60_000;
 
 function base64UrlSha256(value: string) {
     return crypto
@@ -276,6 +278,85 @@ function oauthMetadata() {
     };
 }
 
+function isSupportedProvider(provider: unknown): provider is typeof SUPPORTED_PROVIDERS[number] {
+    return typeof provider === 'string' && (SUPPORTED_PROVIDERS as readonly string[]).includes(provider);
+}
+
+function safeJson(value: unknown) {
+    return JSON.stringify(value, (_key, item) => {
+        if (typeof item === 'bigint') {
+            return item.toString();
+        }
+        return item;
+    }, 2);
+}
+
+function trimToolText(text: string) {
+    if (text.length <= MAX_TOOL_RESPONSE_CHARS) {
+        return text;
+    }
+    return `${text.slice(0, MAX_TOOL_RESPONSE_CHARS)}\n\n... truncated at ${MAX_TOOL_RESPONSE_CHARS} characters`;
+}
+
+function collectExchangeMethods(exchange: any) {
+    const methods = new Set<string>();
+    let current = exchange;
+
+    while (current && current !== Object.prototype) {
+        for (const name of Object.getOwnPropertyNames(current)) {
+            if (name === 'constructor' || name.startsWith('_')) continue;
+            try {
+                if (typeof exchange[name] === 'function') {
+                    methods.add(name);
+                }
+            } catch {
+                // Ignore getters or dynamic fields that throw.
+            }
+        }
+        current = Object.getPrototypeOf(current);
+    }
+
+    return [...methods].sort();
+}
+
+async function createExchange(provider: string, userId: string | null, options: Record<string, unknown> = {}) {
+    if (!isSupportedProvider(provider)) {
+        throw new Error(`Unsupported provider: ${provider}`);
+    }
+
+    const exchangeClass = (ccxt as any)[provider];
+    const config: Record<string, unknown> = {
+        enableRateLimit: true,
+        ...options,
+    };
+
+    if (userId) {
+        const connSnap = await db.collection(`users/${userId}/exchange_connections`)
+            .where('provider', '==', provider)
+            .where('isActive', '==', true)
+            .limit(1)
+            .get();
+
+        if (!connSnap.empty) {
+            const data = connSnap.docs[0].data();
+            config.apiKey = decrypt(data.apiKeyEncrypted);
+            config.secret = decrypt(data.apiSecretEncrypted);
+        }
+    }
+
+    return new exchangeClass(config);
+}
+
+function assertMethodCallable(exchange: any, method: unknown): asserts method is string {
+    if (typeof method !== 'string' || !method.trim()) {
+        throw new Error('method must be a non-empty string');
+    }
+
+    if (method.startsWith('_') || method === 'constructor' || typeof exchange[method] !== 'function') {
+        throw new Error(`Unknown or unsupported exchange method: ${method}`);
+    }
+}
+
 function createMcpServer(userId: string | null) {
     const server = new Server({
         name: "TradeMCPServer",
@@ -284,7 +365,7 @@ function createMcpServer(userId: string | null) {
         capabilities: {
             tools: {}
         },
-        instructions: "Use this server to inspect connected crypto exchange balances and create trade proposals for explicit user approval. Never create a trade proposal unless the user clearly asks for one."
+        instructions: "Use this server to inspect connected crypto exchanges and call Binance/Bybit API methods through CCXT for the authenticated dashboard user. Prefer create_trade_proposal for user-approved trading workflows; use raw exchange calls only when the user explicitly asks for a specific exchange method."
     });
 
     server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -317,6 +398,45 @@ function createMcpServer(userId: string | null) {
                         },
                         required: ["provider", "symbol", "side", "orderType", "quantity", "rationale"]
                     },
+                },
+                {
+                    name: "list_exchange_methods",
+                    description: "List all callable CCXT methods exposed for a Binance or Bybit exchange instance, including unified methods like fetchTicker and exchange-specific raw API methods.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            provider: { type: "string", enum: ["binance", "bybit"] },
+                            filter: { type: "string", description: "Optional case-insensitive substring filter, for example order, private, fetch, transfer." },
+                            includeHas: { type: "boolean", description: "Include the exchange.has capability map." },
+                            options: { type: "object", description: "Optional CCXT exchange constructor options." }
+                        },
+                        required: ["provider"]
+                    },
+                    annotations: {
+                        readOnlyHint: true,
+                    },
+                },
+                {
+                    name: "call_exchange_method",
+                    description: "Call any callable CCXT method on the authenticated user's Binance or Bybit connection. Use args for positional arguments exactly as CCXT expects. This can call public, private, read, trading, transfer, and raw exchange-specific methods.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            provider: { type: "string", enum: ["binance", "bybit"] },
+                            method: { type: "string", description: "CCXT method name, for example fetchTicker, fetchOpenOrders, privateGetAccount, createOrder." },
+                            args: {
+                                type: "array",
+                                description: "Positional arguments passed directly to the CCXT method.",
+                                items: {}
+                            },
+                            params: {
+                                type: "object",
+                                description: "Convenience object used as the only argument when args is omitted."
+                            },
+                            options: { type: "object", description: "Optional CCXT exchange constructor options, for example defaultType." }
+                        },
+                        required: ["provider", "method"]
+                    },
                 }
             ]
         };
@@ -345,16 +465,9 @@ function createMcpServer(userId: string | null) {
                 const data = doc.data();
                 if (data.provider === 'binance' || data.provider === 'bybit') {
                     try {
-                       const exchangeClass = (ccxt as any)[data.provider];
-                       const apiKey = decrypt(data.apiKeyEncrypted);
-                       const apiSecret = decrypt(data.apiSecretEncrypted);
-                       
-                       const exchange = new exchangeClass({
-                           apiKey,
-                           secret: apiSecret,
-                       });
-                       const balance = await exchange.fetchBalance();
-                       balances[data.provider] = balance.total;
+                           const exchange = await createExchange(data.provider, userId);
+                           const balance = await exchange.fetchBalance();
+                           balances[data.provider] = balance.total;
                     } catch (err: any) {
                        balances[data.provider] = { error: err.message };
                     }
@@ -380,6 +493,63 @@ function createMcpServer(userId: string | null) {
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
             return { content: [{ type: "text", text: `Proposal created with ID: ${proposalRef.id}. It is pending human approval in the Trade MCP dashboard.` }] };
+        }
+
+        if (name === "list_exchange_methods") {
+            const provider = args?.provider;
+            if (!isSupportedProvider(provider)) {
+                throw new Error('provider must be binance or bybit');
+            }
+
+            const exchange = await createExchange(provider, userId, (args?.options as Record<string, unknown>) || {});
+            const filter = typeof args?.filter === 'string' ? args.filter.toLowerCase() : '';
+            const methods = collectExchangeMethods(exchange).filter(method => (
+                filter ? method.toLowerCase().includes(filter) : true
+            ));
+            const payload: Record<string, unknown> = {
+                provider,
+                methodCount: methods.length,
+                methods,
+            };
+
+            if (args?.includeHas === true) {
+                payload.has = exchange.has;
+            }
+
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(payload))
+                }]
+            };
+        }
+
+        if (name === "call_exchange_method") {
+            const provider = args?.provider;
+            if (!isSupportedProvider(provider)) {
+                throw new Error('provider must be binance or bybit');
+            }
+
+            const exchange = await createExchange(provider, userId, (args?.options as Record<string, unknown>) || {});
+            assertMethodCallable(exchange, args?.method);
+
+            const callArgs = Array.isArray(args?.args)
+                ? args.args
+                : args?.params && typeof args.params === 'object'
+                    ? [args.params]
+                    : [];
+            const result = await exchange[args.method](...callArgs);
+
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson({
+                        provider,
+                        method: args.method,
+                        result,
+                    }))
+                }]
+            };
         }
 
         throw new Error(`Unknown tool: ${name}`);
