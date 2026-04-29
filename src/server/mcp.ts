@@ -1,6 +1,10 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
+import type { OAuthClientInformationFull, OAuthClientMetadata, OAuthTokens, OAuthTokenRevocationRequest } from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { AuthorizationParams, OAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/provider.js";
+import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import express from "express";
 import admin from 'firebase-admin';
@@ -56,6 +60,221 @@ if (!admin.apps.length) {
 }
 
 const db = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
+
+type PendingAuthorization = {
+    client: OAuthClientInformationFull;
+    params: AuthorizationParams;
+    expiresAt: number;
+};
+
+type AuthorizationCode = PendingAuthorization & {
+    userId: string;
+};
+
+type StoredToken = {
+    token: string;
+    clientId: string;
+    userId: string;
+    scopes: string[];
+    expiresAt: number;
+    resource?: URL;
+};
+
+class InMemoryClientsStore {
+    private clients = new Map<string, OAuthClientInformationFull>();
+
+    async getClient(clientId: string) {
+        return this.clients.get(clientId);
+    }
+
+    async registerClient(clientMetadata: OAuthClientMetadata) {
+        const client: OAuthClientInformationFull = {
+            ...clientMetadata,
+            client_id: crypto.randomUUID(),
+            client_id_issued_at: Math.floor(Date.now() / 1000),
+            client_secret: clientMetadata.token_endpoint_auth_method === 'none'
+                ? undefined
+                : crypto.randomBytes(32).toString('hex'),
+            client_secret_expires_at: 0,
+        };
+        this.clients.set(client.client_id, client);
+        return client;
+    }
+}
+
+class FirebaseOAuthProvider implements OAuthServerProvider {
+    readonly clientsStore = new InMemoryClientsStore();
+    private pending = new Map<string, PendingAuthorization>();
+    private codes = new Map<string, AuthorizationCode>();
+    private accessTokens = new Map<string, StoredToken>();
+    private refreshTokens = new Map<string, StoredToken>();
+
+    constructor(private readonly publicBaseUrl: string) {}
+
+    async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: express.Response) {
+        if (!client.redirect_uris.includes(params.redirectUri)) {
+            throw new Error('Unregistered redirect_uri');
+        }
+
+        const requestId = crypto.randomUUID();
+        this.pending.set(requestId, {
+            client,
+            params,
+            expiresAt: Date.now() + 10 * 60 * 1000,
+        });
+
+        const target = new URL('/trade-mcp/', this.publicBaseUrl);
+        target.searchParams.set('oauth_request', requestId);
+        res.redirect(target.href);
+    }
+
+    async completeAuthorization(requestId: string, userId: string) {
+        const pending = this.pending.get(requestId);
+        if (!pending || pending.expiresAt < Date.now()) {
+            this.pending.delete(requestId);
+            throw new Error('OAuth authorization request expired');
+        }
+
+        const code = crypto.randomUUID();
+        this.pending.delete(requestId);
+        this.codes.set(code, {
+            ...pending,
+            userId,
+            expiresAt: Date.now() + 5 * 60 * 1000,
+        });
+
+        const redirectUrl = new URL(pending.params.redirectUri);
+        redirectUrl.searchParams.set('code', code);
+        if (pending.params.state !== undefined) {
+            redirectUrl.searchParams.set('state', pending.params.state);
+        }
+        return redirectUrl.href;
+    }
+
+    async challengeForAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string) {
+        const code = this.getCode(client, authorizationCode);
+        return code.params.codeChallenge;
+    }
+
+    async getClient(clientId: string) {
+        return this.clientsStore.getClient(clientId);
+    }
+
+    getAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string) {
+        return this.getCode(client, authorizationCode);
+    }
+
+    async exchangeAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string, _codeVerifier?: string, redirectUri?: string, resource?: URL): Promise<OAuthTokens> {
+        const code = this.getCode(client, authorizationCode);
+        if (redirectUri && redirectUri !== code.params.redirectUri) {
+            throw new Error('redirect_uri mismatch');
+        }
+        this.codes.delete(authorizationCode);
+
+        return this.issueTokens(client.client_id, code.userId, code.params.scopes || [], resource || code.params.resource);
+    }
+
+    async exchangeRefreshToken(client: OAuthClientInformationFull, refreshToken: string, scopes?: string[], resource?: URL): Promise<OAuthTokens> {
+        const token = this.refreshTokens.get(refreshToken);
+        if (!token || token.clientId !== client.client_id) {
+            throw new Error('Invalid refresh token');
+        }
+
+        return this.issueTokens(client.client_id, token.userId, scopes || token.scopes, resource || token.resource);
+    }
+
+    async verifyAccessToken(token: string): Promise<AuthInfo> {
+        const stored = this.accessTokens.get(token);
+        if (!stored || stored.expiresAt < Date.now()) {
+            this.accessTokens.delete(token);
+            throw new Error('Invalid or expired access token');
+        }
+
+        return {
+            token,
+            clientId: stored.clientId,
+            scopes: stored.scopes,
+            expiresAt: Math.floor(stored.expiresAt / 1000),
+            resource: stored.resource,
+            extra: { userId: stored.userId },
+        };
+    }
+
+    async revokeToken(_client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest) {
+        this.accessTokens.delete(request.token);
+        this.refreshTokens.delete(request.token);
+    }
+
+    private getCode(client: OAuthClientInformationFull, authorizationCode: string) {
+        const code = this.codes.get(authorizationCode);
+        if (!code || code.expiresAt < Date.now()) {
+            this.codes.delete(authorizationCode);
+            throw new Error('Invalid or expired authorization code');
+        }
+        if (code.client.client_id !== client.client_id) {
+            throw new Error('Authorization code was not issued to this client');
+        }
+        return code;
+    }
+
+    private issueTokens(clientId: string, userId: string, scopes: string[], resource?: URL): OAuthTokens {
+        const accessToken = crypto.randomBytes(32).toString('hex');
+        const refreshToken = crypto.randomBytes(32).toString('hex');
+        const expiresAt = Date.now() + 60 * 60 * 1000;
+        const stored: StoredToken = {
+            token: accessToken,
+            clientId,
+            userId,
+            scopes,
+            expiresAt,
+            resource,
+        };
+        this.accessTokens.set(accessToken, stored);
+        this.refreshTokens.set(refreshToken, {
+            ...stored,
+            token: refreshToken,
+            expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+        });
+
+        return {
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            token_type: 'bearer',
+            expires_in: 3600,
+            scope: scopes.join(' '),
+        };
+    }
+}
+
+const publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://vmi3245942.contaboserver.net';
+const mcpServerUrl = new URL('/api/mcp/', publicBaseUrl);
+const oauthProvider = new FirebaseOAuthProvider(publicBaseUrl);
+const resourceMetadataUrl = new URL('/api/mcp/.well-known/oauth-protected-resource', publicBaseUrl).href;
+
+function base64UrlSha256(value: string) {
+    return crypto
+        .createHash('sha256')
+        .update(value)
+        .digest('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+}
+
+function oauthMetadata() {
+    return {
+        issuer: mcpServerUrl.href,
+        authorization_endpoint: new URL('authorize', mcpServerUrl).href,
+        token_endpoint: new URL('token', mcpServerUrl).href,
+        registration_endpoint: new URL('register', mcpServerUrl).href,
+        revocation_endpoint: new URL('revoke', mcpServerUrl).href,
+        response_types_supported: ['code'],
+        code_challenge_methods_supported: ['S256'],
+        token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        scopes_supported: ['mcp:tools'],
+    };
+}
 
 function createMcpServer(userId: string | null) {
     const server = new Server({
@@ -189,7 +408,11 @@ function getApiKey(req: express.Request) {
 }
 
 async function userIdFromMcpRequest(req: express.Request) {
-    const defaultUserId = process.env.DEFAULT_MCP_USER_ID?.trim();
+    const oauthUserId = req.auth?.extra?.userId;
+    if (typeof oauthUserId === 'string' && oauthUserId.trim()) {
+        return oauthUserId.trim();
+    }
+
     const token = req.query.token as string | undefined;
     if (token) {
         const decoded = await admin.auth().verifyIdToken(token);
@@ -198,7 +421,7 @@ async function userIdFromMcpRequest(req: express.Request) {
 
     const apiKey = getApiKey(req);
     if (!apiKey) {
-        return defaultUserId || null;
+        throw new Error('Missing auth');
     }
 
     const snap = await db.collectionGroup('api_keys').where('key', '==', apiKey).limit(1).get();
@@ -213,6 +436,151 @@ async function userIdFromMcpRequest(req: express.Request) {
 const transports = new Map<string, SSEServerTransport>();
 
 export const mcpRouter = express.Router();
+
+mcpRouter.get('/.well-known/oauth-protected-resource', (_req, res) => {
+    res.json({
+        resource: mcpServerUrl.href,
+        authorization_servers: [mcpServerUrl.href],
+        scopes_supported: ['mcp:tools'],
+        resource_name: 'Trade MCP',
+    });
+});
+
+mcpRouter.get('/.well-known/oauth-authorization-server', (_req, res) => {
+    res.json(oauthMetadata());
+});
+
+mcpRouter.post('/register', async (req, res) => {
+    try {
+        const client = await oauthProvider.clientsStore.registerClient(req.body as OAuthClientMetadata);
+        res.status(201).json(client);
+    } catch (err: any) {
+        res.status(400).json({
+            error: 'invalid_client_metadata',
+            error_description: err.message || 'Invalid client metadata',
+        });
+    }
+});
+
+mcpRouter.get('/authorize', async (req, res) => {
+    try {
+        if (req.query.response_type !== 'code') {
+            res.status(400).send('Unsupported response_type');
+            return;
+        }
+
+        const clientId = String(req.query.client_id || '');
+        const redirectUri = String(req.query.redirect_uri || '');
+        const codeChallenge = String(req.query.code_challenge || '');
+        const codeChallengeMethod = String(req.query.code_challenge_method || 'S256');
+        if (!clientId || !redirectUri || !codeChallenge || codeChallengeMethod !== 'S256') {
+            res.status(400).send('Invalid OAuth authorization request');
+            return;
+        }
+
+        const client = await oauthProvider.getClient(clientId);
+        if (!client) {
+            res.status(400).send('Unknown OAuth client');
+            return;
+        }
+
+        await oauthProvider.authorize(client, {
+            state: typeof req.query.state === 'string' ? req.query.state : undefined,
+            scopes: typeof req.query.scope === 'string' ? req.query.scope.split(' ').filter(Boolean) : ['mcp:tools'],
+            codeChallenge,
+            redirectUri,
+            resource: typeof req.query.resource === 'string' ? new URL(req.query.resource) : mcpServerUrl,
+        }, res);
+    } catch (err: any) {
+        console.error('OAuth authorize error:', err);
+        res.status(400).send(err.message || 'OAuth authorization failed');
+    }
+});
+
+mcpRouter.post('/token', express.urlencoded({ extended: false }), async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+        const clientId = String(req.body.client_id || '');
+        const client = await oauthProvider.getClient(clientId);
+        if (!client) {
+            res.status(401).json({ error: 'invalid_client' });
+            return;
+        }
+
+        if (client.client_secret && req.body.client_secret !== client.client_secret) {
+            res.status(401).json({ error: 'invalid_client' });
+            return;
+        }
+
+        if (req.body.grant_type === 'authorization_code') {
+            const code = String(req.body.code || '');
+            const verifier = String(req.body.code_verifier || '');
+            const codeData = oauthProvider.getAuthorizationCode(client, code);
+            if (!verifier || base64UrlSha256(verifier) !== codeData.params.codeChallenge) {
+                res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid PKCE verifier' });
+                return;
+            }
+
+            const tokens = await oauthProvider.exchangeAuthorizationCode(
+                client,
+                code,
+                verifier,
+                String(req.body.redirect_uri || ''),
+                req.body.resource ? new URL(String(req.body.resource)) : undefined,
+            );
+            res.json(tokens);
+            return;
+        }
+
+        if (req.body.grant_type === 'refresh_token') {
+            const tokens = await oauthProvider.exchangeRefreshToken(
+                client,
+                String(req.body.refresh_token || ''),
+                typeof req.body.scope === 'string' ? req.body.scope.split(' ').filter(Boolean) : undefined,
+                req.body.resource ? new URL(String(req.body.resource)) : undefined,
+            );
+            res.json(tokens);
+            return;
+        }
+
+        res.status(400).json({ error: 'unsupported_grant_type' });
+    } catch (err: any) {
+        console.error('OAuth token error:', err);
+        res.status(400).json({ error: 'invalid_grant', error_description: err.message || 'OAuth token exchange failed' });
+    }
+});
+
+mcpRouter.post('/revoke', express.urlencoded({ extended: false }), async (req, res) => {
+    const clientId = String(req.body.client_id || '');
+    const client = clientId ? await oauthProvider.getClient(clientId) : undefined;
+    if (client) {
+        await oauthProvider.revokeToken?.(client, { token: String(req.body.token || '') });
+    }
+    res.status(200).send('');
+});
+
+mcpRouter.post('/oauth/complete', async (req, res) => {
+    const { requestId, idToken } = req.body || {};
+    if (!requestId || !idToken) {
+        res.status(400).json({ error: 'Missing requestId or idToken' });
+        return;
+    }
+
+    try {
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        const redirectUrl = await oauthProvider.completeAuthorization(requestId, decoded.uid);
+        res.json({ redirectUrl });
+    } catch (err: any) {
+        console.error('OAuth completion error:', err);
+        res.status(400).json({ error: err.message || 'OAuth completion failed' });
+    }
+});
+
+const oauthMiddleware = requireBearerAuth({
+    verifier: oauthProvider,
+    requiredScopes: [],
+    resourceMetadataUrl,
+});
 
 // Middleware to verify Firebase ID Token
 async function verifyAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -296,7 +664,7 @@ mcpRouter.delete('/keys/:id', verifyAuth, async (req, res) => {
     res.json({ success: true });
 });
 
-mcpRouter.post('/', async (req, res) => {
+mcpRouter.post('/', oauthMiddleware, async (req, res) => {
     let server: Server | undefined;
     let transport: StreamableHTTPServerTransport | undefined;
 
@@ -329,7 +697,7 @@ mcpRouter.post('/', async (req, res) => {
     }
 });
 
-mcpRouter.get('/', (_req, res) => {
+mcpRouter.get('/', oauthMiddleware, (_req, res) => {
     res.status(405).json({
         jsonrpc: "2.0",
         error: {
@@ -340,7 +708,7 @@ mcpRouter.get('/', (_req, res) => {
     });
 });
 
-mcpRouter.get('/sse', async (req, res) => {
+mcpRouter.get('/sse', oauthMiddleware, async (req, res) => {
     try {
         const userId = await userIdFromMcpRequest(req);
         const transport = new SSEServerTransport("/api/mcp/messages", res);
