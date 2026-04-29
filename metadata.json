@@ -1,0 +1,6 @@
+{
+  "name": "Trade MCP Server",
+  "description": "A server that connects LLMs to crypto exchanges using MCP and requires user approval for trades.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

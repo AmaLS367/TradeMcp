@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Basic user information.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "createdAt"]
+    },
+    "ExchangeConnection": {
+      "title": "Exchange Connection",
+      "description": "User's connected exchange API keys (encrypted).",
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string", "enum": ["binance", "bybit"] },
+        "apiKeyEncrypted": { "type": "string" },
+        "apiSecretEncrypted": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["provider", "apiKeyEncrypted", "apiSecretEncrypted", "isActive", "createdAt"]
+    },
+    "Policy": {
+      "title": "Trading Policy",
+      "description": "User-defined limits for AI trading.",
+      "type": "object",
+      "properties": {
+        "maxOrderNotional": { "type": "number" },
+        "allowedSymbols": { "type": "array", "items": { "type": "string" } },
+        "allowedActions": { "type": "array", "items": { "type": "string" } },
+        "autoExecutionEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["maxOrderNotional", "allowedSymbols", "allowedActions", "autoExecutionEnabled", "updatedAt"]
+    },
+    "TradeProposal": {
+      "title": "Trade Proposal",
+      "description": "Action proposed by LLM, waiting for user approval.",
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string" },
+        "symbol": { "type": "string" },
+        "side": { "type": "string", "enum": ["buy", "sell"] },
+        "orderType": { "type": "string", "enum": ["market", "limit"] },
+        "quantity": { "type": "number" },
+        "price": { "type": "number", "description": "Optional limit price" },
+        "rationale": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending_approval", "approved", "rejected", "expired", "executed", "failed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "approvedAt": { "type": "string", "format": "date-time" },
+        "executionHash": { "type": "string" },
+        "executionResult": { "type": "string" }
+      },
+      "required": ["provider", "symbol", "side", "orderType", "quantity", "rationale", "status", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "Audit Log",
+      "description": "Record of actions and responses.",
+      "type": "object",
+      "properties": {
+        "eventType": { "type": "string" },
+        "source": { "type": "string" },
+        "payload": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["eventType", "source", "payload", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "/users/{userId}/exchange_connections/{connectionId}": {
+      "schema": { "$ref": "#/entities/ExchangeConnection" },
+      "description": "User's connected exchanges"
+    },
+    "/users/{userId}/policies/{policyId}": {
+      "schema": { "$ref": "#/entities/Policy" },
+      "description": "User's trading policies"
+    },
+    "/users/{userId}/trade_proposals/{proposalId}": {
+      "schema": { "$ref": "#/entities/TradeProposal" },
+      "description": "Trade proposals proposed by MCP/LLM"
+    },
+    "/users/{userId}/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Audit trail for all AI and user actions"
+    }
+  }
+}
