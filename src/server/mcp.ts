@@ -669,6 +669,18 @@ mcpWellKnownRouter.get('/.well-known/oauth-authorization-server', (_req, res) =>
     res.json(oauthMetadata());
 });
 
+mcpWellKnownRouter.get('/.well-known/oauth-authorization-server/api/mcp', (_req, res) => {
+    res.json(oauthMetadata());
+});
+
+mcpWellKnownRouter.get('/.well-known/openid-configuration', (_req, res) => {
+    res.json(oauthMetadata());
+});
+
+mcpWellKnownRouter.get('/.well-known/openid-configuration/api/mcp', (_req, res) => {
+    res.json(oauthMetadata());
+});
+
 export const mcpRouter = express.Router();
 
 mcpRouter.get('/.well-known/oauth-protected-resource', (_req, res) => {
@@ -676,6 +688,10 @@ mcpRouter.get('/.well-known/oauth-protected-resource', (_req, res) => {
 });
 
 mcpRouter.get('/.well-known/oauth-authorization-server', (_req, res) => {
+    res.json(oauthMetadata());
+});
+
+mcpRouter.get('/.well-known/openid-configuration', (_req, res) => {
     res.json(oauthMetadata());
 });
 
