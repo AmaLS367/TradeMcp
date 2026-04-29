@@ -23,7 +23,9 @@ https://vmi3245942.contaboserver.net/api/mcp/
 https://vmi3245942.contaboserver.net/api/mcp/
 ```
 
-No API key and no OAuth are required for connector setup.
+Authentication: OAuth.
+
+During connector setup, ChatGPT redirects you to the Trade MCP dashboard. Sign in with the Google account whose exchange connections should be used.
 
 ## Environment
 
@@ -46,6 +48,7 @@ Optional:
 
 ```text
 PORT=3000
+PUBLIC_BASE_URL=https://vmi3245942.contaboserver.net
 ```
 
 ## Run

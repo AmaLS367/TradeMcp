@@ -105,6 +105,88 @@ function AuthGuard() {
   );
 }
 
+function OAuthAuthorize() {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const requestId = new URLSearchParams(window.location.search).get('oauth_request') || "";
+
+  useEffect(() => {
+    return onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!user || !requestId) return;
+
+    let cancelled = false;
+    async function completeOAuth() {
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch('/api/mcp/oauth/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestId, idToken }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'OAuth authorization failed');
+        if (!cancelled) {
+          window.location.href = data.redirectUrl;
+        }
+      } catch (err: any) {
+        if (!cancelled) setError(err.message);
+      }
+    }
+
+    completeOAuth();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, requestId]);
+
+  if (!requestId) {
+    return <div className="p-8 text-center text-red-500">Missing OAuth request.</div>;
+  }
+
+  if (loading) {
+    return <div className="p-8 text-center text-gray-500">Loading...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <Card className="w-full max-w-sm">
+          <CardHeader>
+            <CardTitle>Connect Trade MCP</CardTitle>
+            <CardDescription>Sign in to authorize this connector.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button className="w-full" onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}>
+              Sign in with Google
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-gray-50">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle>Connecting Trade MCP</CardTitle>
+          <CardDescription>{user.email}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {error ? <p className="text-sm text-red-500">{error}</p> : <p className="text-sm text-gray-500">Finishing authorization...</p>}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function MCPSettings() {
    const [copied, setCopied] = useState("");
 
@@ -132,7 +214,7 @@ function MCPSettings() {
                        </Button>
                    </div>
                    <p className="text-xs text-gray-500">
-                       Один endpoint для всех клиентов. Ключ и OAuth не нужны для подключения.
+                       Один endpoint для всех клиентов. Authentication: OAuth.
                    </p>
                </div>
            </CardContent>
@@ -347,5 +429,9 @@ function ProposalsList({ user }: { user: User }) {
 }
 
 export default function App() {
+  if (new URLSearchParams(window.location.search).has('oauth_request')) {
+    return <OAuthAuthorize />;
+  }
+
   return <AuthGuard />;
 }
