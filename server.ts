@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { mcpRouter } from "./src/server/mcp.js";
+import { mcpRouter, mcpWellKnownRouter } from "./src/server/mcp.js";
 
 async function startServer() {
   const app = express();
@@ -24,6 +24,7 @@ async function startServer() {
     });
   });
   
+  app.use(mcpWellKnownRouter);
   app.use("/api/mcp", mcpRouter);
 
   // Vite middleware for development

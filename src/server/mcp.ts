@@ -112,7 +112,7 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
     constructor(private readonly publicBaseUrl: string) {}
 
     async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: express.Response) {
-        if (!client.redirect_uris.includes(params.redirectUri)) {
+        if (!isRegisteredRedirectUri(client, params.redirectUri)) {
             throw new Error('Unregistered redirect_uri');
         }
 
@@ -278,15 +278,54 @@ function oauthMetadata() {
     };
 }
 
+function protectedResourceMetadata() {
+    return {
+        resource: mcpServerUrl.href,
+        authorization_servers: [mcpServerUrl.href],
+        scopes_supported: ['mcp:tools'],
+        resource_name: 'Trade MCP',
+    };
+}
+
 function isAllowedOAuthRedirectUri(redirectUri: string) {
     try {
         const url = new URL(redirectUri);
-        return url.protocol === 'https:' &&
-            url.hostname === 'chatgpt.com' &&
-            (url.pathname.startsWith('/connector/oauth/') || url.pathname === '/oauth/callback');
+        if (url.protocol === 'https:' && url.hostname === 'chatgpt.com') {
+            return url.pathname.startsWith('/connector/oauth/') || url.pathname === '/oauth/callback';
+        }
+
+        if (url.protocol === 'https:' && url.hostname === 'claude.ai') {
+            return url.pathname === '/api/mcp/auth_callback';
+        }
+
+        if (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')) {
+            return url.pathname === '/callback';
+        }
+
+        return false;
     } catch {
         return false;
     }
+}
+
+function isLoopbackCallbackUri(uri: string) {
+    try {
+        const url = new URL(uri);
+        return url.protocol === 'http:' &&
+            (url.hostname === 'localhost' || url.hostname === '127.0.0.1') &&
+            url.pathname === '/callback';
+    } catch {
+        return false;
+    }
+}
+
+function isRegisteredRedirectUri(client: OAuthClientInformationFull, redirectUri: string) {
+    if (client.redirect_uris.includes(redirectUri)) {
+        return true;
+    }
+
+    return isLoopbackCallbackUri(redirectUri) &&
+        client.redirect_uris.some((registeredUri) => isLoopbackCallbackUri(registeredUri));
 }
 
 function isSupportedProvider(provider: unknown): provider is typeof SUPPORTED_PROVIDERS[number] {
@@ -616,15 +655,24 @@ async function userIdFromMcpRequest(req: express.Request) {
 // We keep a map of legacy SSE transports by session ID.
 const transports = new Map<string, SSEServerTransport>();
 
+export const mcpWellKnownRouter = express.Router();
+
+mcpWellKnownRouter.get('/.well-known/oauth-protected-resource', (_req, res) => {
+    res.json(protectedResourceMetadata());
+});
+
+mcpWellKnownRouter.get('/.well-known/oauth-protected-resource/api/mcp', (_req, res) => {
+    res.json(protectedResourceMetadata());
+});
+
+mcpWellKnownRouter.get('/.well-known/oauth-authorization-server', (_req, res) => {
+    res.json(oauthMetadata());
+});
+
 export const mcpRouter = express.Router();
 
 mcpRouter.get('/.well-known/oauth-protected-resource', (_req, res) => {
-    res.json({
-        resource: mcpServerUrl.href,
-        authorization_servers: [mcpServerUrl.href],
-        scopes_supported: ['mcp:tools'],
-        resource_name: 'Trade MCP',
-    });
+    res.json(protectedResourceMetadata());
 });
 
 mcpRouter.get('/.well-known/oauth-authorization-server', (_req, res) => {
