@@ -112,7 +112,6 @@ function MCPSettings({ user }: { user: User }) {
    const [error, setError] = useState("");
 
    const baseUrl = `${window.location.origin}/api/mcp/`;
-   const legacySseUrl = `${window.location.origin}/api/mcp/sse`;
 
    useEffect(() => {
        const unsub = onSnapshot(
@@ -168,13 +167,7 @@ function MCPSettings({ user }: { user: User }) {
                        </Button>
                    </div>
                    <p className="text-xs text-gray-500">
-                       ChatGPT: выбери <b>No authentication</b> и вставь URL с <code>?key=...</code>. OAuth тут не используется.
-                   </p>
-                   <p className="text-xs text-gray-500">
-                       Claude/API: используй этот URL и передай ключ как <code>Authorization: Bearer YOUR_KEY</code>.
-                   </p>
-                   <p className="text-xs text-gray-400">
-                       Legacy SSE для старых клиентов: <code>{legacySseUrl}</code>
+                       Один endpoint для всех клиентов. OAuth тут не используется.
                    </p>
                </div>
 
@@ -196,33 +189,16 @@ function MCPSettings({ user }: { user: User }) {
 
                    <div className="space-y-2">
                        {apiKeys.map(k => {
-                           const fullUrl = `${baseUrl}?key=${k.key}`;
-                           const legacyFullUrl = `${legacySseUrl}?key=${k.key}`;
                            return (
                                <div key={k.id} className="border rounded p-3 space-y-2">
                                    <div className="flex items-center justify-between">
                                        <span className="font-medium text-sm">{k.label}</span>
                                        <Button variant="outline" size="sm" className="text-red-600 border-red-200" onClick={() => handleRevoke(k.id)}>Revoke</Button>
                                    </div>
-                                   <p className="text-xs text-gray-500">ChatGPT URL (No authentication)</p>
-                                   <div className="flex items-center gap-2">
-                                       <input readOnly className="flex-1 text-xs font-mono bg-slate-50 border rounded px-2 py-1" value={fullUrl} />
-                                       <Button variant="outline" size="sm" onClick={() => handleCopy(fullUrl, k.id)}>
-                                           {copied === k.id ? 'Copied!' : 'Copy URL'}
-                                       </Button>
-                                   </div>
-                                   <p className="text-xs text-gray-500">Claude/API bearer token</p>
                                    <div className="flex items-center gap-2">
                                        <input readOnly className="flex-1 text-xs font-mono bg-slate-50 border rounded px-2 py-1" value={k.key} />
-                                       <Button variant="outline" size="sm" onClick={() => handleCopy(k.key, `${k.id}-token`)}>
-                                           {copied === `${k.id}-token` ? 'Copied!' : 'Copy Key'}
-                                       </Button>
-                                   </div>
-                                   <p className="text-xs text-gray-500">Legacy SSE URL</p>
-                                   <div className="flex items-center gap-2">
-                                       <input readOnly className="flex-1 text-xs font-mono bg-slate-50 border rounded px-2 py-1" value={legacyFullUrl} />
-                                       <Button variant="outline" size="sm" onClick={() => handleCopy(legacyFullUrl, `${k.id}-sse`)}>
-                                           {copied === `${k.id}-sse` ? 'Copied!' : 'Copy SSE'}
+                                       <Button variant="outline" size="sm" onClick={() => handleCopy(k.key, k.id)}>
+                                           {copied === k.id ? 'Copied!' : 'Copy Key'}
                                        </Button>
                                    </div>
                                </div>
