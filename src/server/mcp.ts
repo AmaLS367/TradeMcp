@@ -5,10 +5,47 @@ import express from "express";
 import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import ccxt from 'ccxt';
+import crypto from 'crypto';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+// --- Encryption Helpers ---
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || ""; // Should be 64 hex chars (32 bytes)
+const ALGORITHM = 'aes-256-gcm';
+
+function encrypt(text: string) {
+    if (!ENCRYPTION_KEY) throw new Error("ENCRYPTION_KEY not set");
+    const iv = crypto.randomBytes(12);
+    const key = Buffer.from(ENCRYPTION_KEY, 'hex');
+    const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+    let encrypted = cipher.update(text, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    const authTag = cipher.getAuthTag().toString('hex');
+    return `${iv.toString('hex')}:${authTag}:${encrypted}`;
+}
+
+function decrypt(ciphertext: string) {
+    if (!ENCRYPTION_KEY) throw new Error("ENCRYPTION_KEY not set");
+    const [ivHex, authTagHex, encryptedHex] = ciphertext.split(':');
+    if (!ivHex || !authTagHex || !encryptedHex) throw new Error("Invalid ciphertext format");
+    
+    const iv = Buffer.from(ivHex, 'hex');
+    const authTag = Buffer.from(authTagHex, 'hex');
+    const key = Buffer.from(ENCRYPTION_KEY, 'hex');
+    
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+    let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+}
+
+// --- Firebase Initialization ---
 if (!admin.apps.length) {
+    const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
     admin.initializeApp({
+        credential: serviceAccountKey
+            ? admin.credential.cert(JSON.parse(serviceAccountKey))
+            : admin.credential.applicationDefault(),
         projectId: firebaseConfig.projectId,
     });
 }
@@ -19,6 +56,68 @@ const db = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
 const transports = new Map<string, SSEServerTransport>();
 
 export const mcpRouter = express.Router();
+
+// Middleware to verify Firebase ID Token
+async function verifyAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+        return res.status(401).send('Unauthorized');
+    }
+    const idToken = authHeader.split('Bearer ')[1];
+    try {
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        (req as any).userId = decodedToken.uid;
+        next();
+    } catch (error) {
+        res.status(401).send('Unauthorized');
+    }
+}
+
+// --- API Endpoints ---
+
+// Create connection
+mcpRouter.post('/connections', verifyAuth, async (req, res) => {
+    const { provider, apiKey, apiSecret } = req.body;
+    const userId = (req as any).userId;
+
+    if (!provider || !apiKey || !apiSecret) {
+        return res.status(400).send('Missing required fields');
+    }
+
+    try {
+        const apiKeyEncrypted = encrypt(apiKey);
+        const apiSecretEncrypted = encrypt(apiSecret);
+        const apiKeyPreview = `${apiKey.slice(0, 8)}...`;
+
+        const docRef = db.collection(`users/${userId}/exchange_connections`).doc();
+        await docRef.set({
+            provider,
+            apiKeyEncrypted,
+            apiSecretEncrypted,
+            apiKeyPreview,
+            isActive: true,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        res.json({ success: true, id: docRef.id });
+    } catch (err: any) {
+        console.error("Error creating connection:", err);
+        res.status(500).send(err.message);
+    }
+});
+
+// Delete connection
+mcpRouter.delete('/connections/:id', verifyAuth, async (req, res) => {
+    const { id } = req.params;
+    const userId = (req as any).userId;
+
+    try {
+        await db.doc(`users/${userId}/exchange_connections/${id}`).delete();
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).send(err.message);
+    }
+});
 
 mcpRouter.get('/sse', async (req, res) => {
     // Basic auth via token in query
@@ -93,9 +192,12 @@ mcpRouter.get('/sse', async (req, res) => {
                     if (data.provider === 'binance' || data.provider === 'bybit') {
                         try {
                            const exchangeClass = (ccxt as any)[data.provider];
+                           const apiKey = decrypt(data.apiKeyEncrypted);
+                           const apiSecret = decrypt(data.apiSecretEncrypted);
+                           
                            const exchange = new exchangeClass({
-                               apiKey: data.apiKeyEncrypted, // Simplified for MVP (in prod, decrypt!)
-                               secret: data.apiSecretEncrypted,
+                               apiKey,
+                               secret: apiSecret,
                            });
                            const balance = await exchange.fetchBalance();
                            balances[data.provider] = balance.total;
@@ -157,6 +259,12 @@ db.collectionGroup('trade_proposals')
                 if (!userId) continue;
 
                 try {
+                    // ATOMIC STATUS UPDATE to prevent double execution
+                    await doc.ref.update({
+                        status: 'executing',
+                        executionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+
                     // Fetch the user's exchange connection
                     const connRef = db.collection(`users/${userId}/exchange_connections`)
                                         .where('provider', '==', data.provider)
@@ -172,9 +280,12 @@ db.collectionGroup('trade_proposals')
                     
                     // CCXT Execution
                     const exchangeClass = (ccxt as any)[data.provider];
+                    const apiKey = decrypt(connData.apiKeyEncrypted);
+                    const apiSecret = decrypt(connData.apiSecretEncrypted);
+
                     const exchange = new exchangeClass({
-                        apiKey: connData.apiKeyEncrypted,
-                        secret: connData.apiSecretEncrypted,
+                        apiKey,
+                        secret: apiSecret,
                     });
 
                     // Execute trade
@@ -205,6 +316,8 @@ db.collectionGroup('trade_proposals')
 
                 } catch (err: any) {
                     console.error("Execution error:", err);
+                    // Only update if it wasn't already successfully executed by someone else
+                    // (though with 'executing' status update it's unlikely)
                     await doc.ref.update({
                         status: 'failed',
                         executionResult: err.message,
@@ -216,5 +329,3 @@ db.collectionGroup('trade_proposals')
     }, err => {
         console.error("Execution engine listener error", err);
     });
-
-

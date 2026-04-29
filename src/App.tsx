@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '../components/ui/card';
-import { collection, query, onSnapshot, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
@@ -38,10 +37,9 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  // In UI, don't throw, just log so it doesn't crash React.
 }
 
-function AuthGuard({ children }: { children: React.ReactNode }) {
+function AuthGuard() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -169,20 +167,27 @@ function ExchangeConnections({ user }: { user: User }) {
 
   const handleAdd = async (e: React.FormEvent) => {
       e.preventDefault();
-      const id = Date.now().toString();
       try {
-          await setDoc(doc(db, `users/${user.uid}/exchange_connections`, id), {
-              provider,
-              apiKeyEncrypted: apiKey, // In production, encrypt this before sending!
-              apiSecretEncrypted: apiSecret,
-              isActive: true,
-              createdAt: new Date().toISOString()
+          const idToken = await user.getIdToken();
+          const response = await fetch('/api/mcp/connections', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${idToken}`
+              },
+              body: JSON.stringify({ provider, apiKey, apiSecret })
           });
+          
+          if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(errorText || 'Failed to add connection');
+          }
+          
           setApiKey('');
           setApiSecret('');
-      } catch (err) {
-          handleFirestoreError(err, OperationType.CREATE, 'exchange_connections');
-          alert('Failed to add connection');
+      } catch (err: any) {
+          console.error('Error adding connection:', err);
+          alert(err.message);
       }
   };
 
@@ -194,6 +199,26 @@ function ExchangeConnections({ user }: { user: User }) {
        } catch (err) {
            handleFirestoreError(err, OperationType.UPDATE, 'exchange_connections');
        }
+  };
+
+  const handleDelete = async (id: string) => {
+      if (!confirm('Are you sure you want to delete this connection?')) return;
+      try {
+          const idToken = await user.getIdToken();
+          const response = await fetch(`/api/mcp/connections/${id}`, {
+              method: 'DELETE',
+              headers: {
+                  'Authorization': `Bearer ${idToken}`
+              }
+          });
+          if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(errorText || 'Failed to delete connection');
+          }
+      } catch (err: any) {
+          console.error('Error deleting connection:', err);
+          alert(err.message);
+      }
   };
 
   return (
@@ -236,11 +261,12 @@ function ExchangeConnections({ user }: { user: User }) {
                              <div key={c.id} className="flex items-center justify-between p-4 border rounded">
                                  <div>
                                      <p className="font-semibold capitalize">{c.provider}</p>
-                                     <p className="text-sm text-gray-500 font-mono">{c.apiKeyEncrypted.substring(0, 8)}...</p>
+                                     <p className="text-sm text-gray-500 font-mono">{c.apiKeyPreview || '...'}</p>
                                  </div>
                                  <div className="flex items-center gap-2">
                                      <Badge variant={c.isActive ? 'default' : 'secondary'}>{c.isActive ? 'Active' : 'Inactive'}</Badge>
                                      <Button variant="outline" size="sm" onClick={() => handleDeactivate(c.id, c.isActive)}>Toggle</Button>
+                                     <Button variant="destructive" size="sm" onClick={() => handleDelete(c.id)}>Delete</Button>
                                  </div>
                              </div>
                          ))}
@@ -307,7 +333,8 @@ function ProposalsList({ user }: { user: User }) {
                                       <Badge variant={
                                           p.status === 'approved' ? 'default' :
                                           p.status === 'rejected' ? 'destructive' :
-                                          p.status === 'executed' ? 'default' : 'secondary'
+                                          p.status === 'executed' ? 'default' : 
+                                          p.status === 'executing' ? 'secondary' : 'secondary'
                                       }>{p.status.replace('_', ' ')}</Badge>
                                   </TableCell>
                                   <TableCell className="text-right">
@@ -329,12 +356,5 @@ function ProposalsList({ user }: { user: User }) {
 }
 
 export default function App() {
-  return (
-    <BrowserRouter>
-       <Routes>
-          <Route path="/" element={<AuthGuard><div /></AuthGuard>} />
-       </Routes>
-    </BrowserRouter>
-  );
+  return <AuthGuard />;
 }
-
