@@ -13,6 +13,7 @@ import ccxt from 'ccxt';
 import crypto from 'crypto';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { logger } from './logger.js';
+import { validateExchangeKeys } from './exchangeValidator.js';
 
 // --- Encryption Helpers ---
 export const ALGORITHM = 'aes-256-gcm';
@@ -135,9 +136,13 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
         }
 
         const requestId = crypto.randomUUID();
-        const pendingData: PendingAuthorization = {
+        // Serialize URL to string for Firestore to prevent write errors
+        const pendingData: any = {
             client,
-            params,
+            params: {
+                ...params,
+                resource: params.resource?.toString(),
+            },
             expiresAt: Date.now() + 10 * 60 * 1000,
         };
         await this.pendingCollection.doc(requestId).set(pendingData);
@@ -187,17 +192,43 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
     }
 
     async getAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string) {
-        return this.getCode(client, authorizationCode);
+        const codeDoc = await this.codesCollection.doc(authorizationCode).get();
+        if (!codeDoc.exists) {
+            throw new Error('Invalid or expired authorization code');
+        }
+        const code = codeDoc.data() as AuthorizationCode;
+        if (code.client.client_id !== client.client_id) {
+             throw new Error('Authorization code was not issued to this client');
+        }
+        return code;
     }
 
     async exchangeAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string, _codeVerifier?: string, redirectUri?: string, resource?: URL): Promise<OAuthTokens> {
-        const code = await this.getCode(client, authorizationCode);
-        if (redirectUri && redirectUri !== code.params.redirectUri) {
-            throw new Error('redirect_uri mismatch');
-        }
-        await this.codesCollection.doc(authorizationCode).delete();
+        const codeRef = this.codesCollection.doc(authorizationCode);
+        
+        const result = await db.runTransaction(async (transaction) => {
+            const codeDoc = await transaction.get(codeRef);
+            if (!codeDoc.exists) {
+                throw new Error('Invalid or expired authorization code');
+            }
+            const code = codeDoc.data() as AuthorizationCode;
+            
+            if (code.expiresAt < Date.now()) {
+                transaction.delete(codeRef);
+                throw new Error('Invalid or expired authorization code');
+            }
+            if (code.client.client_id !== client.client_id) {
+                throw new Error('invalid_client');
+            }
+            if (redirectUri && redirectUri !== code.params.redirectUri) {
+                throw new Error('redirect_uri mismatch');
+            }
 
-        return this.issueTokens(client.client_id, code.userId, code.params.scopes || [], resource?.toString() || code.params.resource?.toString());
+            transaction.delete(codeRef);
+            return code;
+        });
+
+        return this.issueTokens(client.client_id, result.userId, result.params.scopes || [], resource?.toString() || (result.params.resource as unknown as string));
     }
 
     async exchangeRefreshToken(client: OAuthClientInformationFull, refreshToken: string, scopes?: string[], resource?: URL): Promise<OAuthTokens> {
@@ -904,6 +935,15 @@ mcpRouter.post('/connections', verifyAuth, async (req, res) => {
     }
 
     try {
+        // Backend validation of exchange keys before saving
+        const validationResult = await validateExchangeKeys(provider as 'binance' | 'bybit', apiKey, apiSecret);
+        if (!validationResult.valid) {
+            return res.status(400).json({ 
+                error: 'invalid_exchange_keys', 
+                message: validationResult.error || 'Failed to validate exchange keys' 
+            });
+        }
+
         const apiKeyEncrypted = encrypt(apiKey);
         const apiSecretEncrypted = encrypt(apiSecret);
         const apiKeyPreview = `${apiKey.slice(0, 8)}...`;
