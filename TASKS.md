@@ -9,10 +9,8 @@
 9. Добавить health check для Firebase (Реализована проверка подключения при старте и в /api/health)
 10. Логирование (Внедрено структурированное логирование через pino)
 11. Тесты (Настроен Vitest, добавлены unit-тесты для encryption helpers)
+13. Environment variables validation (Реализована строгая проверка через Zod при старте)
 
 💡 Рекомендации по улучшению:
 12. Документация API
     Нет OpenAPI/Swagger спецификации для REST endpoints
-
-13. Environment variables validation
-    Проверка всех required env vars при старте сервера
