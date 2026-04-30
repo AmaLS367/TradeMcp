@@ -6,11 +6,9 @@
 6. Отсутствие rate limiting (Добавлен express-rate-limit в server.ts)
 7. CORS не настроен явно (Настроен cors middleware в server.ts)
 8. Дублирование кода обработки ошибок (Создана утилита handleUIError)
+9. Добавить health check для Firebase (Реализована проверка подключения при старте и в /api/health)
 
 💡 Рекомендации по улучшению:
-9. Добавить health check для Firebase
-    Проверка подключения к Firestore при старте
-
 10. Логирование
     Добавить structured logging вместо console.log
 
