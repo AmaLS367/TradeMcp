@@ -122,9 +122,34 @@
     @apply border-border outline-ring/50;
     }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground min-h-screen relative overflow-x-hidden;
+    background-image: 
+      radial-gradient(at 0% 0%, oklch(0.6 0.2 260 / 0.15) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, oklch(0.7 0.2 320 / 0.15) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, oklch(0.6 0.2 260 / 0.1) 0px, transparent 50%),
+      radial-gradient(at 0% 100%, oklch(0.7 0.2 320 / 0.1) 0px, transparent 50%);
+    background-attachment: fixed;
     }
   html {
     @apply font-sans;
     }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-background/40 backdrop-blur-xl border-border/50 shadow-xl;
+  }
+  .glass-card {
+    @apply bg-card/40 backdrop-blur-md border-white/10 dark:border-white/5 shadow-2xl;
+  }
+  .glass-header {
+    @apply bg-background/60 backdrop-blur-2xl border-b border-border/40 sticky top-0 z-50;
+  }
+  .animate-pulse-subtle {
+    animation: pulse-subtle 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  @keyframes pulse-subtle {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.85; transform: scale(0.98); }
+  }
 }

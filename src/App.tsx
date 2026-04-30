@@ -7,12 +7,31 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../co
 import { collection, query, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Badge } from '../components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Toaster, toast } from 'sonner';
 import { ThemeProvider, useTheme } from './theme-provider';
 import { ModeToggle } from '../components/mode-toggle';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  LayoutDashboard, 
+  ArrowLeftRight, 
+  Settings, 
+  LogOut, 
+  Plus, 
+  Trash2, 
+  Power, 
+  CheckCircle2, 
+  XCircle, 
+  Clock, 
+  ShieldCheck,
+  Zap,
+  Copy,
+  Check,
+  Smartphone,
+  Info,
+  ExternalLink,
+  ChevronRight
+} from 'lucide-react';
 
 enum OperationType {
   CREATE = 'create',
@@ -22,12 +41,6 @@ enum OperationType {
   GET = 'get',
   WRITE = 'write',
 }
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: any;
-}
 
 function handleUIError(error: any, context: string) {
     console.error(`[${context}]`, error);
@@ -36,23 +49,34 @@ function handleUIError(error: any, context: string) {
 }
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  toast.error(`Database error during ${operationType} on ${path || 'unknown path'}`);
+  console.error('Firestore Error: ', error);
+  toast.error(`Database error during ${operationType}`);
 }
+
+const NavItem = ({ active, icon: Icon, label, onClick }: any) => (
+  <button
+    onClick={onClick}
+    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
+      active 
+        ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[1.02]' 
+        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+    }`}
+  >
+    <Icon size={20} />
+    <span className="font-medium">{label}</span>
+    {active && (
+      <motion.div 
+        layoutId="activeNav"
+        className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-foreground"
+      />
+    )}
+  </button>
+);
 
 function AuthGuard() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('proposals');
 
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
@@ -61,57 +85,152 @@ function AuthGuard() {
     });
   }, []);
 
-  if (loading) return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
+  if (loading) return (
+    <div className="h-screen flex items-center justify-center bg-background">
+      <motion.div 
+        animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }}
+        transition={{ repeat: Infinity, duration: 2 }}
+        className="flex flex-col items-center gap-4"
+      >
+        <Zap className="text-primary w-12 h-12 fill-primary" />
+        <p className="text-muted-foreground animate-pulse">Initializing magic...</p>
+      </motion.div>
+    </div>
+  );
 
   if (!user) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <Card className="w-full max-w-sm">
-          <CardHeader>
-            <CardTitle>Trade MCP Server</CardTitle>
-            <CardDescription>Sign in to manage your crypto AI agent</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button className="w-full" onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}>
-              Sign in with Google
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="flex h-screen items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <Card className="w-full max-w-sm glass-card border-none">
+            <CardHeader className="text-center">
+              <div className="mx-auto w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-4">
+                <Zap className="text-primary w-8 h-8 fill-primary" />
+              </div>
+              <CardTitle className="text-2xl font-bold tracking-tight">Trade MCP</CardTitle>
+              <CardDescription>Your AI trading intelligence hub</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button 
+                className="w-full h-12 rounded-xl text-md font-semibold bg-primary hover:shadow-xl hover:shadow-primary/20 transition-all" 
+                onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}
+              >
+                Sign in with Google
+              </Button>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <header className="bg-card border-b px-6 py-4 flex items-center justify-between sticky top-0 z-50">
-        <h1 className="text-xl font-semibold">Trade MCP</h1>
-        
-        <div className="flex items-center gap-4">
-             <span className="text-sm text-muted-foreground hidden sm:inline">{user.email}</span>
-             <ModeToggle />
-             <Button variant="outline" size="sm" onClick={() => signOut(auth)}>Sign out</Button>
+    <div className="min-h-screen flex">
+      {/* Sidebar */}
+      <aside className="w-72 glass-header border-r border-border/40 hidden lg:flex flex-col p-6 h-screen sticky top-0">
+        <div className="flex items-center gap-3 mb-12 px-2">
+          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
+            <Zap className="text-primary-foreground w-6 h-6 fill-primary-foreground" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight">Trade MCP</h1>
         </div>
-      </header>
-      <main className="flex-1 p-6 max-w-5xl mx-auto w-full">
-         <Tabs defaultValue="proposals">
-          <TabsList className="mb-6">
-            <TabsTrigger value="proposals">Proposals</TabsTrigger>
-            <TabsTrigger value="connections">Exchanges</TabsTrigger>
-            <TabsTrigger value="settings">Settings & MCP</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="proposals">
-             <ProposalsList user={user} />
-          </TabsContent>
-          
-          <TabsContent value="connections">
-             <ExchangeConnections user={user} />
-          </TabsContent>
 
-          <TabsContent value="settings">
-             <MCPSettings />
-          </TabsContent>
-        </Tabs>
+        <nav className="flex-1 space-y-2">
+          <NavItem 
+            active={activeTab === 'proposals'} 
+            icon={LayoutDashboard} 
+            label="Proposals" 
+            onClick={() => setActiveTab('proposals')} 
+          />
+          <NavItem 
+            active={activeTab === 'connections'} 
+            icon={ArrowLeftRight} 
+            label="Exchanges" 
+            onClick={() => setActiveTab('connections')} 
+          />
+          <NavItem 
+            active={activeTab === 'settings'} 
+            icon={Settings} 
+            label="Settings" 
+            onClick={() => setActiveTab('settings')} 
+          />
+        </nav>
+
+        <div className="pt-6 border-t border-border/40 mt-auto">
+          <div className="flex items-center gap-3 px-2 mb-6">
+            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden border border-border">
+              {user.photoURL ? <img src={user.photoURL} alt="" /> : <ShieldCheck size={20} />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold truncate">{user.displayName || 'Trader'}</p>
+              <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <ModeToggle />
+            <Button 
+              variant="ghost" 
+              className="flex-1 justify-start gap-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors" 
+              onClick={() => signOut(auth)}
+            >
+              <LogOut size={18} />
+              <span className="font-medium">Sign out</span>
+            </Button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col">
+        {/* Mobile Header */}
+        <header className="lg:hidden glass-header px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap className="text-primary w-6 h-6 fill-primary" />
+            <h1 className="text-lg font-bold">Trade MCP</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <ModeToggle />
+            <Button variant="ghost" size="icon" onClick={() => signOut(auth)} className="rounded-full">
+              <LogOut size={20} />
+            </Button>
+          </div>
+        </header>
+
+        {/* Mobile Nav */}
+        <div className="lg:hidden px-6 py-2 border-b border-border/40 bg-muted/30">
+           <div className="flex gap-2 overflow-x-auto no-scrollbar py-2">
+              {['proposals', 'connections', 'settings'].map(tab => (
+                <Button 
+                  key={tab}
+                  variant={activeTab === tab ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setActiveTab(tab)}
+                  className="rounded-full capitalize whitespace-nowrap px-4"
+                >
+                  {tab}
+                </Button>
+              ))}
+           </div>
+        </div>
+
+        <div className="p-6 lg:p-10 max-w-6xl w-full mx-auto flex-1">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3 }}
+            >
+              {activeTab === 'proposals' && <ProposalsList user={user} />}
+              {activeTab === 'connections' && <ExchangeConnections user={user} />}
+              {activeTab === 'settings' && <MCPSettings />}
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </main>
     </div>
   );
@@ -132,7 +251,6 @@ function OAuthAuthorize() {
 
   useEffect(() => {
     if (!user || !requestId) return;
-
     let cancelled = false;
     async function completeOAuth() {
       try {
@@ -144,55 +262,46 @@ function OAuthAuthorize() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'OAuth authorization failed');
-        if (!cancelled) {
-          window.location.href = data.redirectUrl;
-        }
+        if (!cancelled) window.location.href = data.redirectUrl;
       } catch (err: any) {
         if (!cancelled) setError(err.message);
       }
     }
-
     completeOAuth();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [user, requestId]);
 
-  if (!requestId) {
-    return <div className="p-8 text-center text-destructive">Missing OAuth request.</div>;
-  }
-
-  if (loading) {
-    return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
-  }
-
-  if (!user) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <Card className="w-full max-w-sm">
-          <CardHeader>
-            <CardTitle>Connect Trade MCP</CardTitle>
-            <CardDescription>Sign in to authorize this connector.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button className="w-full" onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}>
-              Sign in with Google
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (!requestId) return <div className="p-8 text-center text-destructive">Missing OAuth request.</div>;
+  if (loading) return (
+    <div className="h-screen flex items-center justify-center">
+       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+    </div>
+  );
 
   return (
-    <div className="flex h-screen items-center justify-center bg-background">
-      <Card className="w-full max-w-sm">
+    <div className="flex h-screen items-center justify-center p-6">
+      <Card className="w-full max-w-sm glass-card border-none text-center">
         <CardHeader>
-          <CardTitle>Connecting Trade MCP</CardTitle>
-          <CardDescription>{user.email}</CardDescription>
+          <div className="mx-auto w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
+             <Smartphone className="text-primary w-6 h-6" />
+          </div>
+          <CardTitle>Finish Connecting</CardTitle>
+          <CardDescription>Confirming authorization for {user?.email}</CardDescription>
         </CardHeader>
         <CardContent>
-          {error ? <p className="text-sm text-destructive">{error}</p> : <p className="text-sm text-muted-foreground">Finishing authorization...</p>}
+          {error ? (
+            <div className="p-3 bg-destructive/10 rounded-lg text-destructive text-sm flex gap-2 items-center">
+               <XCircle size={16} /> {error}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3">
+               <div className="animate-pulse flex items-center gap-2 text-primary font-medium">
+                  <div className="w-2 h-2 bg-primary rounded-full animate-ping" />
+                  Synchronizing...
+               </div>
+               <p className="text-xs text-muted-foreground italic">You will be redirected automatically</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -200,37 +309,86 @@ function OAuthAuthorize() {
 }
 
 function MCPSettings() {
-   const [copied, setCopied] = useState("");
-
+   const [copied, setCopied] = useState(false);
    const baseUrl = import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin + '/api/mcp/';
 
-   const handleCopy = (text: string, key: string) => {
-       navigator.clipboard.writeText(text);
-       setCopied(key);
-       setTimeout(() => setCopied(""), 2000);
+   const handleCopy = () => {
+       navigator.clipboard.writeText(baseUrl);
+       setCopied(true);
+       setTimeout(() => setCopied(false), 2000);
    };
 
    return (
-       <Card>
+      <div className="space-y-6">
+        <div>
+           <h2 className="text-3xl font-bold tracking-tight mb-2">Settings & Integration</h2>
+           <p className="text-muted-foreground">Configure your AI agent connectivity</p>
+        </div>
+
+        <Card className="glass-card border-none">
            <CardHeader>
-               <CardTitle>MCP Server</CardTitle>
-               <CardDescription>Подключи любой LLM — ChatGPT, Claude, Cursor и другие</CardDescription>
+               <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 bg-primary/10 rounded-lg">
+                     <Zap className="text-primary w-5 h-5" />
+                  </div>
+                  <CardTitle>MCP Server Connection</CardTitle>
+               </div>
+               <CardDescription>Connect any LLM client (ChatGPT, Claude, Cursor) to your trading server.</CardDescription>
            </CardHeader>
            <CardContent className="space-y-6">
-               <div className="p-3 bg-muted rounded space-y-2">
-                   <p className="text-xs text-muted-foreground font-medium uppercase">MCP Server URL</p>
-                   <div className="flex items-center gap-2">
-                       <code className="text-sm flex-1 break-all">{baseUrl}</code>
-                       <Button variant="outline" size="sm" onClick={() => handleCopy(baseUrl, 'url')}>
-                           {copied === 'url' ? 'Copied!' : 'Copy'}
+               <div className="p-4 bg-muted/50 rounded-2xl border border-border/40 space-y-3">
+                   <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">MCP Server URL</p>
+                      <Badge variant="outline" className="bg-background/50 backdrop-blur-sm border-primary/20 text-primary">OAuth Secured</Badge>
+                   </div>
+                   <div className="flex items-center gap-3 bg-background/80 p-3 rounded-xl border border-border/40 group shadow-inner">
+                       <code className="text-sm flex-1 break-all font-mono opacity-80">{baseUrl}</code>
+                       <Button 
+                         variant="secondary" 
+                         size="sm" 
+                         className="rounded-lg h-9 w-24 transition-all" 
+                         onClick={handleCopy}
+                       >
+                           {copied ? (
+                             <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} className="flex items-center gap-1">
+                               <Check size={14} /> Copied
+                             </motion.div>
+                           ) : (
+                             <div className="flex items-center gap-1">
+                               <Copy size={14} /> Copy
+                             </div>
+                           )}
                        </Button>
                    </div>
-                   <p className="text-xs text-muted-foreground">
-                       Один endpoint для всех клиентов. Authentication: OAuth.
-                   </p>
+                   <div className="flex items-start gap-2 pt-1">
+                      <Info size={14} className="text-primary mt-0.5" />
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Use this single endpoint for all your AI connectors. Ensure your client supports OAuth 2.0.
+                      </p>
+                   </div>
+               </div>
+               
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                  <div className="p-4 rounded-2xl border border-border/40 hover:bg-muted/30 transition-colors cursor-pointer group">
+                     <div className="flex items-center justify-between mb-2">
+                        <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 border-none">Cursor</Badge>
+                        <ExternalLink size={14} className="text-muted-foreground group-hover:text-primary transition-colors" />
+                     </div>
+                     <p className="text-sm font-medium">Add to Cursor</p>
+                     <p className="text-xs text-muted-foreground">Settings &gt; Models &gt; MCP</p>
+                  </div>
+                  <div className="p-4 rounded-2xl border border-border/40 hover:bg-muted/30 transition-colors cursor-pointer group">
+                     <div className="flex items-center justify-between mb-2">
+                        <Badge variant="secondary" className="bg-orange-500/10 text-orange-500 border-none">ChatGPT</Badge>
+                        <ExternalLink size={14} className="text-muted-foreground group-hover:text-primary transition-colors" />
+                     </div>
+                     <p className="text-sm font-medium">ChatGPT Connectors</p>
+                     <p className="text-xs text-muted-foreground">Personal &gt; My connectors</p>
+                  </div>
                </div>
            </CardContent>
-       </Card>
+        </Card>
+      </div>
    );
 }
 
@@ -254,56 +412,30 @@ function ExchangeConnections({ user }: { user: User }) {
 
   const handleAdd = async (e: React.FormEvent) => {
       e.preventDefault();
-      
-      // Сначала валидируем ключи
       setValidationStatus('validating');
       setValidationError('');
-      
       try {
         const idToken = await user.getIdToken();
         const validateResponse = await fetch('/api/validate-keys', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${idToken}`
-          },
-          body: JSON.stringify({ 
-            exchange: provider, 
-            apiKey, 
-            apiSecret 
-          })
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+          body: JSON.stringify({ exchange: provider, apiKey, apiSecret })
         });
-        
         const validateResult = await validateResponse.json();
-        
         if (!validateResult.valid) {
           setValidationStatus('invalid');
-          setValidationError(validateResult.error || 'Неизвестная ошибка валидации');
+          setValidationError(validateResult.error || 'Validation failed');
           return;
         }
-        
         setValidationStatus('valid');
-        
-        // Если валидация успешна, добавляем подключение
         const response = await fetch('/api/mcp/connections', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${idToken}`
-            },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
             body: JSON.stringify({ provider, apiKey, apiSecret })
         });
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || 'Failed to add connection');
-        }
-        
-        setApiKey('');
-        setApiSecret('');
-        setValidationStatus('idle');
-        setValidationError('');
-        toast.success('Ключи успешно проверены и подключение добавлено!');
+        if (!response.ok) throw new Error(await response.text() || 'Failed to add connection');
+        setApiKey(''); setApiSecret(''); setValidationStatus('idle');
+        toast.success('Exchange connected successfully!');
       } catch (err: any) {
           setValidationStatus('invalid');
           setValidationError(err.message);
@@ -313,13 +445,9 @@ function ExchangeConnections({ user }: { user: User }) {
 
   const handleDeactivate = async (id: string, currentStatus: boolean) => {
        try {
-           await updateDoc(doc(db, `users/${user.uid}/exchange_connections`, id), {
-               isActive: !currentStatus
-           });
+           await updateDoc(doc(db, `users/${user.uid}/exchange_connections`, id), { isActive: !currentStatus });
            toast.success(`Connection ${currentStatus ? 'deactivated' : 'activated'}`);
-       } catch (err) {
-           handleFirestoreError(err, OperationType.UPDATE, 'exchange_connections');
-       }
+       } catch (err) { handleFirestoreError(err, OperationType.UPDATE, 'exchange_connections'); }
   };
 
   const handleDelete = async (id: string) => {
@@ -328,99 +456,156 @@ function ExchangeConnections({ user }: { user: User }) {
           const idToken = await user.getIdToken();
           const response = await fetch(`/api/mcp/connections/${id}`, {
               method: 'DELETE',
-              headers: {
-                  'Authorization': `Bearer ${idToken}`
-              }
+              headers: { 'Authorization': `Bearer ${idToken}` }
           });
-          if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(errorText || 'Failed to delete connection');
-          }
-          toast.success('Connection deleted successfully');
-      } catch (err: any) {
-          handleUIError(err, 'Delete Connection');
-      }
+          if (!response.ok) throw new Error(await response.text() || 'Failed to delete connection');
+          toast.success('Connection deleted');
+      } catch (err: any) { handleUIError(err, 'Delete Connection'); }
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-            <CardHeader>
-                <CardTitle>Add Connection</CardTitle>
-                <CardDescription>Connect Binance or Bybit read/write API keys.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <form onSubmit={handleAdd} className="space-y-4">
-                    <div className="space-y-2">
-                        <Label>Exchange Provider</Label>
-                        <select className="w-full flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm" value={provider} onChange={e => setProvider(e.target.value)}>
-                             <option value="binance">Binance</option>
-                             <option value="bybit">Bybit</option>
-                        </select>
-                    </div>
-                    <div className="space-y-2">
-                         <Label>API Key</Label>
-                         <Input value={apiKey} onChange={e => setApiKey(e.target.value)} required />
-                    </div>
-                    <div className="space-y-2">
-                         <Label>API Secret</Label>
-                         <Input type="password" value={apiSecret} onChange={e => setApiSecret(e.target.value)} required />
-                    </div>
-                    {validationStatus === 'validating' && (
-                      <div className="text-sm text-blue-600">Проверка ключей...</div>
-                    )}
-                    {validationStatus === 'valid' && (
-                      <div className="text-sm text-green-600">✓ Ключи успешно проверены</div>
-                    )}
-                    {validationStatus === 'invalid' && validationError && (
-                      <div className="text-sm text-red-600">✗ {validationError}</div>
-                    )}
-                    <Button 
-                      type="submit" 
-                      className="w-full" 
-                      disabled={validationStatus === 'validating'}
-                    >
-                      {validationStatus === 'validating' ? 'Проверка...' : 'Save Connection'}
-                    </Button>
-                </form>
-            </CardContent>
-        </Card>
+    <div className="space-y-8">
+      <div>
+         <h2 className="text-3xl font-bold tracking-tight mb-2">Exchange Connections</h2>
+         <p className="text-muted-foreground">Manage your trading accounts</p>
+      </div>
 
-        <Card>
-             <CardHeader>
-                 <CardTitle>Your Connections</CardTitle>
-             </CardHeader>
-             <CardContent>
-                 {loading ? <p>Loading...</p> : connections.length === 0 ? <p className="text-muted-foreground text-sm">No connections added yet.</p> : (
-                     <div className="space-y-4">
-                         {connections.map(c => (
-                             <div key={c.id} className="flex items-center justify-between p-4 border rounded">
-                                 <div>
-                                     <p className="font-semibold capitalize">{c.provider}</p>
-                                     <p className="text-sm text-muted-foreground font-mono">{c.apiKeyPreview || '...'}</p>
-                                 </div>
-                                 <div className="flex items-center gap-2">
-                                     <Badge variant={c.isActive ? 'default' : 'secondary'}>{c.isActive ? 'Active' : 'Inactive'}</Badge>
-                                     <Button variant="outline" size="sm" onClick={() => handleDeactivate(c.id, c.isActive)}>Toggle</Button>
-                                     <Button variant="destructive" size="sm" onClick={() => handleDelete(c.id)}>Delete</Button>
-                                 </div>
-                             </div>
-                         ))}
-                     </div>
-                 )}
-             </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+          <Card className="glass-card border-none lg:col-span-1 h-fit sticky top-10">
+              <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Plus size={20} className="text-primary" />
+                    New Connection
+                  </CardTitle>
+                  <CardDescription>Securely link your API keys.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                  <form onSubmit={handleAdd} className="space-y-5">
+                      <div className="space-y-2">
+                          <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Provider</Label>
+                          <select className="w-full h-11 rounded-xl border border-border/40 bg-background/50 px-4 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all" value={provider} onChange={e => setProvider(e.target.value)}>
+                               <option value="binance">Binance</option>
+                               <option value="bybit">Bybit</option>
+                          </select>
+                      </div>
+                      <div className="space-y-2">
+                           <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">API Key</Label>
+                           <Input className="h-11 rounded-xl bg-background/50 border-border/40 focus:bg-background transition-all" value={apiKey} onChange={e => setApiKey(e.target.value)} required />
+                      </div>
+                      <div className="space-y-2">
+                           <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">API Secret</Label>
+                           <Input className="h-11 rounded-xl bg-background/50 border-border/40 focus:bg-background transition-all" type="password" value={apiSecret} onChange={e => setApiSecret(e.target.value)} required />
+                      </div>
+                      
+                      <AnimatePresence>
+                        {validationStatus !== 'idle' && (
+                          <motion.div 
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2 border ${
+                              validationStatus === 'validating' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
+                              validationStatus === 'valid' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
+                              'bg-destructive/10 text-destructive border-destructive/20'
+                            }`}
+                          >
+                             {validationStatus === 'validating' ? <div className="animate-spin w-3 h-3 border-2 border-current border-t-transparent rounded-full" /> : 
+                              validationStatus === 'valid' ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                             {validationStatus === 'validating' ? 'Checking keys...' : 
+                              validationStatus === 'valid' ? 'Verified successfully' : validationError}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      <Button 
+                        type="submit" 
+                        className="w-full h-11 rounded-xl font-bold shadow-lg shadow-primary/20" 
+                        disabled={validationStatus === 'validating'}
+                      >
+                        {validationStatus === 'validating' ? 'Processing...' : 'Link Exchange'}
+                      </Button>
+                  </form>
+              </CardContent>
+          </Card>
+
+          <div className="lg:col-span-2 space-y-4">
+              {loading ? (
+                <div className="space-y-4">
+                   {[1, 2].map(i => <div key={i} className="h-32 bg-muted/40 animate-pulse rounded-2xl" />)}
+                </div>
+              ) : connections.length === 0 ? (
+                <div className="p-12 text-center border-2 border-dashed border-border/40 rounded-3xl flex flex-col items-center gap-4">
+                   <div className="p-4 bg-muted rounded-full">
+                      <ArrowLeftRight className="text-muted-foreground" size={32} />
+                   </div>
+                   <p className="text-muted-foreground font-medium">No active connections. Start by linking your first exchange.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                    {connections.map(c => (
+                        <motion.div
+                          key={c.id}
+                          layout
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className={`p-5 glass-card rounded-2xl border-none group hover:shadow-2xl transition-all duration-500 ${!c.isActive ? 'grayscale opacity-70' : ''}`}
+                        >
+                            <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold ${
+                                      c.provider === 'binance' ? 'bg-[#F3BA2F]/10 text-[#F3BA2F]' : 'bg-orange-500/10 text-orange-500'
+                                   }`}>
+                                      {c.provider.charAt(0).toUpperCase()}
+                                   </div>
+                                   <div>
+                                       <div className="flex items-center gap-2">
+                                          <p className="text-lg font-bold capitalize">{c.provider}</p>
+                                          {c.isActive && <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />}
+                                       </div>
+                                       <p className="text-sm font-mono text-muted-foreground tracking-widest">{c.apiKeyPreview || '••••••••'}</p>
+                                   </div>
+                                </div>
+                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Button 
+                                      variant="secondary" 
+                                      size="icon" 
+                                      className="rounded-xl h-10 w-10 hover:bg-primary hover:text-primary-foreground transition-all"
+                                      onClick={() => handleDeactivate(c.id, c.isActive)}
+                                      title={c.isActive ? 'Deactivate' : 'Activate'}
+                                    >
+                                        <Power size={18} />
+                                    </Button>
+                                    <Button 
+                                      variant="secondary" 
+                                      size="icon" 
+                                      className="rounded-xl h-10 w-10 hover:bg-destructive hover:text-destructive-foreground transition-all"
+                                      onClick={() => handleDelete(c.id)}
+                                    >
+                                        <Trash2 size={18} />
+                                    </Button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    ))}
+                </div>
+              )}
+          </div>
+      </div>
     </div>
   );
 }
 
 function ProposalsList({ user }: { user: User }) {
    const [proposals, setProposals] = useState<any[]>([]);
+   const [loading, setLoading] = useState(true);
    
    useEffect(() => {
     const q = query(collection(db, `users/${user.uid}/trade_proposals`));
     const unsub = onSnapshot(q, (snap) => {
-      setProposals(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => new Date(b.createdAt?.toDate?.() || 0).getTime() - new Date(a.createdAt?.toDate?.() || 0).getTime()));
+      setProposals(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => 
+        (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)
+      ));
+      setLoading(false);
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'trade_proposals'));
     return unsub;
   }, [user.uid]);
@@ -431,69 +616,129 @@ function ProposalsList({ user }: { user: User }) {
               status,
               approvedAt: new Date().toISOString()
           });
-          toast.success(`Proposal ${status}`);
-      } catch (err) {
-          handleFirestoreError(err, OperationType.UPDATE, 'trade_proposals');
-      }
+          toast.success(`Proposal ${status === 'approved' ? 'sent to execution' : 'cancelled'}`);
+      } catch (err) { handleFirestoreError(err, OperationType.UPDATE, 'trade_proposals'); }
+  };
+
+  const getStatusStyle = (status: string) => {
+    switch(status) {
+      case 'approved': return 'bg-green-500/10 text-green-500 border-green-500/20';
+      case 'rejected': return 'bg-destructive/10 text-destructive border-destructive/20';
+      case 'executed': return 'bg-primary/10 text-primary border-primary/20';
+      case 'executing': return 'bg-blue-500/10 text-blue-500 border-blue-500/20 animate-pulse';
+      case 'pending_approval': return 'bg-orange-500/10 text-orange-500 border-orange-500/20 animate-pulse-subtle';
+      default: return 'bg-muted text-muted-foreground';
+    }
   };
 
   return (
-      <Card>
-          <CardHeader>
-              <CardTitle>Trade Proposals</CardTitle>
-              <CardDescription>Review and approve trades proposed by your LLM.</CardDescription>
-          </CardHeader>
-          <CardContent>
-              {proposals.length === 0 ? <p className="text-muted-foreground text-sm">No proposals matching criteria.</p> : (
-                  <Table>
-                      <TableHeader>
-                          <TableRow>
-                              <TableHead>Time</TableHead>
-                              <TableHead>Symbol</TableHead>
-                              <TableHead>Action</TableHead>
-                              <TableHead>Quantity</TableHead>
-                              <TableHead>Rationale</TableHead>
-                              <TableHead>Status</TableHead>
-                              <TableHead className="text-right">Actions</TableHead>
-                          </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                          {proposals.map(p => (
-                              <TableRow key={p.id}>
-                                  <TableCell>{p.createdAt?.toDate ? p.createdAt.toDate().toLocaleString() : '...'}</TableCell>
-                                  <TableCell className="font-bold">{p.symbol}</TableCell>
-                                  <TableCell className={`font-semibold ${p.side === 'buy' ? 'text-green-600' : 'text-red-500'} capitalize`}>{p.side}</TableCell>
-                                  <TableCell>{p.quantity}</TableCell>
-                                  <TableCell className="max-w-[200px] truncate" title={p.rationale}>{p.rationale}</TableCell>
-                                  <TableCell>
-                                      <Badge variant={
-                                          p.status === 'approved' ? 'default' :
-                                          p.status === 'rejected' ? 'destructive' :
-                                          p.status === 'executed' ? 'default' : 
-                                          p.status === 'executing' ? 'secondary' : 'secondary'
-                                      }>{p.status.replace('_', ' ')}</Badge>
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                      {p.status === 'pending_approval' && (
-                                          <div className="flex justify-end gap-2">
-                                              <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleReview(p.id, 'rejected')}>Reject</Button>
-                                              <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleReview(p.id, 'approved')}>Approve</Button>
-                                          </div>
-                                      )}
-                                  </TableCell>
-                              </TableRow>
-                          ))}
-                      </TableBody>
-                  </Table>
-              )}
-          </CardContent>
-      </Card>
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+         <div>
+            <h2 className="text-4xl font-black tracking-tight mb-2">Intelligence Hub</h2>
+            <p className="text-muted-foreground font-medium">Verify and execute AI-generated trading strategies</p>
+         </div>
+         <Badge variant="outline" className="h-8 px-4 border-primary/20 text-primary bg-primary/5 rounded-full font-bold">
+            {proposals.length} Proposals Syncing
+         </Badge>
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+           {[1, 2, 3, 4].map(i => <div key={i} className="h-56 bg-muted/40 animate-pulse rounded-3xl" />)}
+        </div>
+      ) : proposals.length === 0 ? (
+        <div className="p-20 text-center glass rounded-[3rem] border-dashed border-2 border-border/40">
+           <div className="w-20 h-20 bg-muted/50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Clock size={40} className="text-muted-foreground/50" />
+           </div>
+           <h3 className="text-xl font-bold mb-2">All Quiet...</h3>
+           <p className="text-muted-foreground max-w-sm mx-auto">Your AI agent is currently monitoring markets. New trade proposals will appear here as soon as they are ready.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <AnimatePresence>
+                {proposals.map(p => (
+                    <motion.div
+                      key={p.id}
+                      layout
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      className="glass-card rounded-[2rem] border-none overflow-hidden group hover:shadow-2xl hover:-translate-y-1 transition-all duration-500"
+                    >
+                        <div className="p-6 pb-4">
+                            <div className="flex items-start justify-between mb-6">
+                               <div className="flex items-center gap-3">
+                                  <div className={`p-3 rounded-2xl ${p.side === 'buy' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                                     {p.side === 'buy' ? <Zap size={24} fill="currentColor" /> : <ArrowLeftRight size={24} className="rotate-90" />}
+                                  </div>
+                                  <div>
+                                     <h3 className="text-2xl font-black">{p.symbol}</h3>
+                                     <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{p.provider} • {p.orderType}</p>
+                                  </div>
+                               </div>
+                               <Badge className={`rounded-full px-4 py-1 font-bold border ${getStatusStyle(p.status)}`}>
+                                  {p.status.replace('_', ' ')}
+                               </Badge>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 mb-6">
+                               <div className="p-4 bg-muted/30 rounded-2xl border border-border/10">
+                                  <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Quantity</p>
+                                  <p className="text-lg font-bold">{p.quantity}</p>
+                                </div>
+                                <div className="p-4 bg-muted/30 rounded-2xl border border-border/10">
+                                  <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Created</p>
+                                  <p className="text-sm font-medium">
+                                    {p.createdAt?.toDate ? p.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                                  </p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                               <p className="text-[10px] font-bold text-muted-foreground uppercase px-1">AI Rationale</p>
+                               <p className="text-sm italic text-muted-foreground bg-muted/20 p-4 rounded-2xl border border-border/5 line-clamp-3 group-hover:line-clamp-none transition-all">
+                                  "{p.rationale}"
+                               </p>
+                            </div>
+                        </div>
+
+                        {p.status === 'pending_approval' && (
+                          <div className="p-3 bg-background/40 flex gap-2 border-t border-border/10">
+                             <Button 
+                                variant="ghost" 
+                                className="flex-1 rounded-2xl h-12 text-destructive hover:bg-destructive/10 font-bold" 
+                                onClick={() => handleReview(p.id, 'rejected')}
+                              >
+                               <XCircle size={18} className="mr-2" /> Reject
+                             </Button>
+                             <Button 
+                                className="flex-1 rounded-2xl h-12 bg-primary hover:bg-primary shadow-lg shadow-primary/20 font-bold"
+                                onClick={() => handleReview(p.id, 'approved')}
+                              >
+                               <CheckCircle2 size={18} className="mr-2" /> Approve
+                             </Button>
+                          </div>
+                        )}
+                        
+                        {(p.status === 'executed' || p.status === 'executing') && (
+                          <div className="p-4 bg-primary/5 flex items-center justify-center gap-2 border-t border-primary/10">
+                             <ShieldCheck size={16} className="text-primary" />
+                             <span className="text-xs font-bold text-primary uppercase tracking-widest">Signed & Verified</span>
+                          </div>
+                        )}
+                    </motion.div>
+                ))}
+            </AnimatePresence>
+        </div>
+      )}
+    </div>
   )
 }
 
 export default function App() {
   const isOAuth = new URLSearchParams(window.location.search).has('oauth_request');
-  
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <Toaster position="top-right" richColors theme="system" />
