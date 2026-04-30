@@ -9,6 +9,7 @@ import { Label } from '../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Toaster, toast } from 'sonner';
 
 enum OperationType {
   CREATE = 'create',
@@ -25,6 +26,12 @@ interface FirestoreErrorInfo {
   authInfo: any;
 }
 
+function handleUIError(error: any, context: string) {
+    console.error(`[${context}]`, error);
+    const message = error instanceof Error ? error.message : String(error);
+    toast.error(message);
+}
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
@@ -37,6 +44,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
+  toast.error(`Database error during ${operationType} on ${path || 'unknown path'}`);
 }
 
 function AuthGuard() {
@@ -267,7 +275,6 @@ function ExchangeConnections({ user }: { user: User }) {
         if (!validateResult.valid) {
           setValidationStatus('invalid');
           setValidationError(validateResult.error || 'Неизвестная ошибка валидации');
-          alert(`Ошибка валидации ключей: ${validateResult.error}`);
           return;
         }
         
@@ -292,12 +299,11 @@ function ExchangeConnections({ user }: { user: User }) {
         setApiSecret('');
         setValidationStatus('idle');
         setValidationError('');
-        alert('Ключи успешно проверены и подключение добавлено!');
+        toast.success('Ключи успешно проверены и подключение добавлено!');
       } catch (err: any) {
-          console.error('Error adding connection:', err);
           setValidationStatus('invalid');
           setValidationError(err.message);
-          alert(err.message);
+          handleUIError(err, 'Add Connection');
       }
   };
 
@@ -306,6 +312,7 @@ function ExchangeConnections({ user }: { user: User }) {
            await updateDoc(doc(db, `users/${user.uid}/exchange_connections`, id), {
                isActive: !currentStatus
            });
+           toast.success(`Connection ${currentStatus ? 'deactivated' : 'activated'}`);
        } catch (err) {
            handleFirestoreError(err, OperationType.UPDATE, 'exchange_connections');
        }
@@ -325,9 +332,9 @@ function ExchangeConnections({ user }: { user: User }) {
               const errorText = await response.text();
               throw new Error(errorText || 'Failed to delete connection');
           }
+          toast.success('Connection deleted successfully');
       } catch (err: any) {
-          console.error('Error deleting connection:', err);
-          alert(err.message);
+          handleUIError(err, 'Delete Connection');
       }
   };
 
@@ -420,9 +427,9 @@ function ProposalsList({ user }: { user: User }) {
               status,
               approvedAt: new Date().toISOString()
           });
+          toast.success(`Proposal ${status}`);
       } catch (err) {
           handleFirestoreError(err, OperationType.UPDATE, 'trade_proposals');
-          alert('Failed to update proposal');
       }
   };
 
@@ -481,9 +488,12 @@ function ProposalsList({ user }: { user: User }) {
 }
 
 export default function App() {
-  if (new URLSearchParams(window.location.search).has('oauth_request')) {
-    return <OAuthAuthorize />;
-  }
-
-  return <AuthGuard />;
+  const isOAuth = new URLSearchParams(window.location.search).has('oauth_request');
+  
+  return (
+    <>
+      <Toaster position="top-right" richColors />
+      {isOAuth ? <OAuthAuthorize /> : <AuthGuard />}
+    </>
+  );
 }
