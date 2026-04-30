@@ -1,14 +1,17 @@
 import "dotenv/config";
+import { validateEnv, env } from "./src/server/env.js";
+
+// Validate environment variables before any other imports that might use process.env
+validateEnv();
+
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
 import { rateLimit } from "express-rate-limit";
-import { db, mcpRouter, mcpWellKnownRouter } from "./src/server/mcp.js";
+import { db, mcpRouter, mcpWellKnownRouter, verifyAuth } from "./src/server/mcp.js";
 import { validateExchangeKeys } from "./src/server/exchangeValidator.js";
 import { logger } from "./src/server/logger.js";
-
-import { validateEnv } from "./src/server/env.js";
 
 async function checkFirebaseConnection() {
   try {
@@ -20,11 +23,8 @@ async function checkFirebaseConnection() {
 }
 
 async function startServer() {
-  // Validate environment variables before doing anything else
-  validateEnv();
-
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = env.PORT;
 
   // Logging middleware
   app.use((req, res, next) => {
@@ -33,7 +33,17 @@ async function startServer() {
   });
 
   // Security Middlewares
-  app.use(cors()); // Configure CORS as needed, default allows all origins
+  const allowedOrigins = [
+    env.PUBLIC_BASE_URL,
+    'http://localhost:5173', // Vite default
+    'http://localhost:3000',
+    'https://vmi3245942.contaboserver.net'
+  ].filter(Boolean) as string[];
+
+  app.use(cors({
+    origin: env.NODE_ENV === 'production' ? allowedOrigins : true,
+    credentials: true
+  }));
   app.use(express.json());
 
   // Rate Limiting
@@ -58,23 +68,22 @@ async function startServer() {
 
   // API routes
   app.get("/api/health", async (req, res) => {
-    const encryptionKey = process.env.ENCRYPTION_KEY || "";
     const firebaseStatus = await checkFirebaseConnection();
     
     res.json({
       status: firebaseStatus.ok ? "ok" : "error",
       firebase: firebaseStatus,
       config: {
-        encryptionKeyConfigured: encryptionKey.length === 64,
+        encryptionKeyConfigured: env.ENCRYPTION_KEY.length === 64,
         firebaseAdminCredentialsConfigured: Boolean(
-          process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.GOOGLE_APPLICATION_CREDENTIALS
+          env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.GOOGLE_APPLICATION_CREDENTIALS
         ),
       },
     });
   });
   
   // Endpoint для валидации API ключей бирж
-  app.post("/api/validate-keys", strictLimiter, async (req, res) => {
+  app.post("/api/validate-keys", verifyAuth, strictLimiter, async (req, res) => {
     try {
       const { exchange, apiKey, apiSecret } = req.body;
 
