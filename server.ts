@@ -8,6 +8,8 @@ import { db, mcpRouter, mcpWellKnownRouter } from "./src/server/mcp.js";
 import { validateExchangeKeys } from "./src/server/exchangeValidator.js";
 import { logger } from "./src/server/logger.js";
 
+import { validateEnv } from "./src/server/env.js";
+
 async function checkFirebaseConnection() {
   try {
     await db.collection('health_check').limit(1).get();
@@ -18,6 +20,9 @@ async function checkFirebaseConnection() {
 }
 
 async function startServer() {
+  // Validate environment variables before doing anything else
+  validateEnv();
+
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
