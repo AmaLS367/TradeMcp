@@ -112,7 +112,9 @@ class FirestoreClientsStore {
                 : crypto.randomBytes(32).toString('hex'),
             client_secret_expires_at: 0,
         };
-        await this.collection.doc(client.client_id).set(client);
+        await this.collection.doc(client.client_id).set(
+            Object.fromEntries(Object.entries(client).filter(([, value]) => value !== undefined))
+        );
         return client;
     }
 }
