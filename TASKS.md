@@ -7,11 +7,9 @@
 7. CORS не настроен явно (Настроен cors middleware в server.ts)
 8. Дублирование кода обработки ошибок (Создана утилита handleUIError)
 9. Добавить health check для Firebase (Реализована проверка подключения при старте и в /api/health)
+10. Логирование (Внедрено структурированное логирование через pino)
 
 💡 Рекомендации по улучшению:
-10. Логирование
-    Добавить structured logging вместо console.log
-
 11. Тесты
     Полное отсутствие тестов
     Добавить unit tests для encryption helpers и OAuth flow

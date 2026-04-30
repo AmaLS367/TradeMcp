@@ -6,6 +6,7 @@ import cors from "cors";
 import { rateLimit } from "express-rate-limit";
 import { db, mcpRouter, mcpWellKnownRouter } from "./src/server/mcp.js";
 import { validateExchangeKeys } from "./src/server/exchangeValidator.js";
+import { logger } from "./src/server/logger.js";
 
 async function checkFirebaseConnection() {
   try {
@@ -19,6 +20,12 @@ async function checkFirebaseConnection() {
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
+
+  // Logging middleware
+  app.use((req, res, next) => {
+    logger.info({ method: req.method, url: req.url }, 'Incoming request');
+    next();
+  });
 
   // Security Middlewares
   app.use(cors()); // Configure CORS as needed, default allows all origins
@@ -83,7 +90,7 @@ async function startServer() {
       const result = await validateExchangeKeys(exchange, apiKey, apiSecret);
       res.json(result);
     } catch (error: any) {
-      console.error('Ошибка при валидации ключей:', error);
+      logger.error({ error, exchange: req.body.exchange }, 'Ошибка при валидации ключей');
       res.status(500).json({
         valid: false,
         error: 'Внутренняя ошибка сервера при валидации',
@@ -110,14 +117,14 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", async () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+    logger.info(`Server running on http://0.0.0.0:${PORT}`);
     
     // Startup health check
     const firebaseStatus = await checkFirebaseConnection();
     if (firebaseStatus.ok) {
-      console.log('Firebase connection: OK');
+      logger.info('Firebase connection: OK');
     } else {
-      console.error('Firebase connection: FAILED', firebaseStatus.error);
+      logger.error({ error: firebaseStatus.error }, 'Firebase connection: FAILED');
     }
   });
 }
