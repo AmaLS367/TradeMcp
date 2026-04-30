@@ -2,6 +2,8 @@ import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import cors from "cors";
+import { rateLimit } from "express-rate-limit";
 import { mcpRouter, mcpWellKnownRouter } from "./src/server/mcp.js";
 import { validateExchangeKeys } from "./src/server/exchangeValidator.js";
 
@@ -9,7 +11,29 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  // Security Middlewares
+  app.use(cors()); // Configure CORS as needed, default allows all origins
   app.use(express.json());
+
+  // Rate Limiting
+  const generalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 100, // Limit each IP to 100 requests per window
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later.' }
+  });
+
+  const strictLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 10, // Limit each IP to 10 key validation attempts per window
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { valid: false, error: 'Too many validation attempts. Please try again later.' }
+  });
+
+  // Apply general limiter to all /api routes
+  app.use("/api/", generalLimiter);
 
   // API routes
   app.get("/api/health", (req, res) => {
@@ -26,7 +50,7 @@ async function startServer() {
   });
   
   // Endpoint для валидации API ключей бирж
-  app.post("/api/validate-keys", async (req, res) => {
+  app.post("/api/validate-keys", strictLimiter, async (req, res) => {
     try {
       const { exchange, apiKey, apiSecret } = req.body;
 
