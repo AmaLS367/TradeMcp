@@ -924,7 +924,7 @@ const oauthMiddleware = requireBearerAuth({
 });
 
 // Middleware to verify Firebase ID Token
-async function verifyAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+export async function verifyAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
         return res.status(401).send('Unauthorized');

@@ -11,6 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Toaster, toast } from 'sonner';
+import { ThemeProvider, useTheme } from './theme-provider';
+import { ModeToggle } from '../components/mode-toggle';
 
 enum OperationType {
   CREATE = 'create',
@@ -59,11 +61,11 @@ function AuthGuard() {
     });
   }, []);
 
-  if (loading) return <div className="p-8 text-center text-gray-500">Loading...</div>;
+  if (loading) return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
 
   if (!user) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
+      <div className="flex h-screen items-center justify-center bg-background">
         <Card className="w-full max-w-sm">
           <CardHeader>
             <CardTitle>Trade MCP Server</CardTitle>
@@ -80,12 +82,13 @@ function AuthGuard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="bg-card border-b px-6 py-4 flex items-center justify-between sticky top-0 z-50">
         <h1 className="text-xl font-semibold">Trade MCP</h1>
         
         <div className="flex items-center gap-4">
-             <span className="text-sm text-gray-500">{user.email}</span>
+             <span className="text-sm text-muted-foreground hidden sm:inline">{user.email}</span>
+             <ModeToggle />
              <Button variant="outline" size="sm" onClick={() => signOut(auth)}>Sign out</Button>
         </div>
       </header>
@@ -156,16 +159,16 @@ function OAuthAuthorize() {
   }, [user, requestId]);
 
   if (!requestId) {
-    return <div className="p-8 text-center text-red-500">Missing OAuth request.</div>;
+    return <div className="p-8 text-center text-destructive">Missing OAuth request.</div>;
   }
 
   if (loading) {
-    return <div className="p-8 text-center text-gray-500">Loading...</div>;
+    return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
   }
 
   if (!user) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
+      <div className="flex h-screen items-center justify-center bg-background">
         <Card className="w-full max-w-sm">
           <CardHeader>
             <CardTitle>Connect Trade MCP</CardTitle>
@@ -182,14 +185,14 @@ function OAuthAuthorize() {
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-gray-50">
+    <div className="flex h-screen items-center justify-center bg-background">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Connecting Trade MCP</CardTitle>
           <CardDescription>{user.email}</CardDescription>
         </CardHeader>
         <CardContent>
-          {error ? <p className="text-sm text-red-500">{error}</p> : <p className="text-sm text-gray-500">Finishing authorization...</p>}
+          {error ? <p className="text-sm text-destructive">{error}</p> : <p className="text-sm text-muted-foreground">Finishing authorization...</p>}
         </CardContent>
       </Card>
     </div>
@@ -214,15 +217,15 @@ function MCPSettings() {
                <CardDescription>Подключи любой LLM — ChatGPT, Claude, Cursor и другие</CardDescription>
            </CardHeader>
            <CardContent className="space-y-6">
-               <div className="p-3 bg-slate-50 rounded space-y-2">
-                   <p className="text-xs text-gray-500 font-medium uppercase">MCP Server URL</p>
+               <div className="p-3 bg-muted rounded space-y-2">
+                   <p className="text-xs text-muted-foreground font-medium uppercase">MCP Server URL</p>
                    <div className="flex items-center gap-2">
                        <code className="text-sm flex-1 break-all">{baseUrl}</code>
                        <Button variant="outline" size="sm" onClick={() => handleCopy(baseUrl, 'url')}>
                            {copied === 'url' ? 'Copied!' : 'Copy'}
                        </Button>
                    </div>
-                   <p className="text-xs text-gray-500">
+                   <p className="text-xs text-muted-foreground">
                        Один endpoint для всех клиентов. Authentication: OAuth.
                    </p>
                </div>
@@ -388,13 +391,13 @@ function ExchangeConnections({ user }: { user: User }) {
                  <CardTitle>Your Connections</CardTitle>
              </CardHeader>
              <CardContent>
-                 {loading ? <p>Loading...</p> : connections.length === 0 ? <p className="text-gray-500 text-sm">No connections added yet.</p> : (
+                 {loading ? <p>Loading...</p> : connections.length === 0 ? <p className="text-muted-foreground text-sm">No connections added yet.</p> : (
                      <div className="space-y-4">
                          {connections.map(c => (
                              <div key={c.id} className="flex items-center justify-between p-4 border rounded">
                                  <div>
                                      <p className="font-semibold capitalize">{c.provider}</p>
-                                     <p className="text-sm text-gray-500 font-mono">{c.apiKeyPreview || '...'}</p>
+                                     <p className="text-sm text-muted-foreground font-mono">{c.apiKeyPreview || '...'}</p>
                                  </div>
                                  <div className="flex items-center gap-2">
                                      <Badge variant={c.isActive ? 'default' : 'secondary'}>{c.isActive ? 'Active' : 'Inactive'}</Badge>
@@ -441,7 +444,7 @@ function ProposalsList({ user }: { user: User }) {
               <CardDescription>Review and approve trades proposed by your LLM.</CardDescription>
           </CardHeader>
           <CardContent>
-              {proposals.length === 0 ? <p className="text-gray-500 text-sm">No proposals matching criteria.</p> : (
+              {proposals.length === 0 ? <p className="text-muted-foreground text-sm">No proposals matching criteria.</p> : (
                   <Table>
                       <TableHeader>
                           <TableRow>
@@ -492,9 +495,9 @@ export default function App() {
   const isOAuth = new URLSearchParams(window.location.search).has('oauth_request');
   
   return (
-    <>
-      <Toaster position="top-right" richColors />
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+      <Toaster position="top-right" richColors theme="system" />
       {isOAuth ? <OAuthAuthorize /> : <AuthGuard />}
-    </>
+    </ThemeProvider>
   );
 }
