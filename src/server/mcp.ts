@@ -284,10 +284,13 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
     }
 }
 
-const publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://vmi3245942.contaboserver.net';
-const mcpServerUrl = new URL('/api/mcp/', publicBaseUrl);
-const oauthProvider = new FirebaseOAuthProvider(publicBaseUrl, db);
-const resourceMetadataUrl = new URL('/api/mcp/.well-known/oauth-protected-resource', publicBaseUrl).href;
+const publicBaseUrl = process.env.PUBLIC_BASE_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3000');
+if (!publicBaseUrl && process.env.NODE_ENV === 'production') {
+    console.warn('WARNING: PUBLIC_BASE_URL is not set in production. OAuth and MCP endpoints may not work correctly.');
+}
+const mcpServerUrl = new URL('/api/mcp/', publicBaseUrl || 'http://localhost:3000');
+const oauthProvider = new FirebaseOAuthProvider(publicBaseUrl || 'http://localhost:3000', db);
+const resourceMetadataUrl = new URL('/api/mcp/.well-known/oauth-protected-resource', publicBaseUrl || 'http://localhost:3000').href;
 const SUPPORTED_PROVIDERS = ['binance', 'bybit'] as const;
 const MAX_TOOL_RESPONSE_CHARS = 60_000;
 
