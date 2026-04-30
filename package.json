@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --platform=node --target=esnext --format=esm --bundle --external:express --external:vite --external:firebase-admin --external:@modelcontextprotocol/sdk --external:ccxt --external:firebase --external:dotenv --outfile=dist/server.js",
+    "build": "vite build && esbuild server.ts --platform=node --target=esnext --format=esm --bundle --packages=external --outfile=dist/server.js",
     "start": "node dist/server.js",
     "preview": "vite preview",
     "test": "vitest run",
