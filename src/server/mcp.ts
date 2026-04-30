@@ -12,6 +12,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import ccxt from 'ccxt';
 import crypto from 'crypto';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { logger } from './logger.js';
 
 // --- Encryption Helpers ---
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "";
@@ -780,7 +781,7 @@ mcpRouter.get('/authorize', async (req, res) => {
             resource: typeof req.query.resource === 'string' ? new URL(req.query.resource) : mcpServerUrl,
         }, res);
     } catch (err: any) {
-        console.error('OAuth authorize error:', err);
+        logger.error('OAuth authorize error:', err);
         res.status(400).send(err.message || 'OAuth authorization failed');
     }
 });
@@ -833,7 +834,7 @@ mcpRouter.post('/token', express.urlencoded({ extended: false }), async (req, re
 
         res.status(400).json({ error: 'unsupported_grant_type' });
     } catch (err: any) {
-        console.error('OAuth token error:', err);
+        logger.error('OAuth token error:', err);
         res.status(400).json({ error: 'invalid_grant', error_description: err.message || 'OAuth token exchange failed' });
     }
 });
@@ -859,7 +860,7 @@ mcpRouter.post('/oauth/complete', async (req, res) => {
         const redirectUrl = await oauthProvider.completeAuthorization(requestId, decoded.uid);
         res.json({ redirectUrl });
     } catch (err: any) {
-        console.error('OAuth completion error:', err);
+        logger.error('OAuth completion error:', err);
         res.status(400).json({ error: err.message || 'OAuth completion failed' });
     }
 });
@@ -914,7 +915,7 @@ mcpRouter.post('/connections', verifyAuth, async (req, res) => {
 
         res.json({ success: true, id: docRef.id });
     } catch (err: any) {
-        console.error("Error creating connection:", err);
+        logger.error("Error creating connection:", err);
         res.status(500).send(err.message);
     }
 });
@@ -971,7 +972,7 @@ mcpRouter.post('/', oauthMiddleware, async (req, res) => {
             server?.close();
         });
     } catch (err: any) {
-        console.error("MCP streamable HTTP error:", err);
+        logger.error("MCP streamable HTTP error:", err);
         if (!res.headersSent) {
             res.status(err.message === 'Missing auth' || err.message === 'Invalid API key' ? 401 : 500).json({
                 jsonrpc: "2.0",
@@ -1010,7 +1011,7 @@ mcpRouter.get('/sse', oauthMiddleware, async (req, res) => {
         });
 
     } catch (err: any) {
-        console.error("MCP auth error:", err);
+        logger.error("MCP auth error:", err);
         res.status(401).send(err.message);
     }
 });
@@ -1044,7 +1045,7 @@ db.collectionGroup('trade_proposals')
                         executionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
                     });
                 } catch (claimErr: any) {
-                    console.error("Failed to claim proposal, skipping:", claimErr);
+                    logger.error("Failed to claim proposal, skipping:", claimErr);
                     continue;
                 }
 
@@ -1090,7 +1091,7 @@ db.collectionGroup('trade_proposals')
                     });
 
                 } catch (err: any) {
-                    console.error("Execution error:", err);
+                    logger.error("Execution error:", err);
                     await doc.ref.update({
                         status: 'failed',
                         executionResult: err.message,
@@ -1100,5 +1101,5 @@ db.collectionGroup('trade_proposals')
             }
         }
     }, err => {
-        console.error("Execution engine listener error", err);
+        logger.error("Execution engine listener error", err);
     });
