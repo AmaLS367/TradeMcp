@@ -59,7 +59,7 @@ if (!admin.apps.length) {
     });
 }
 
-const db = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
 
 type PendingAuthorization = {
     client: OAuthClientInformationFull;

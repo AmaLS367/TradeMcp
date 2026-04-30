@@ -4,8 +4,17 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
 import { rateLimit } from "express-rate-limit";
-import { mcpRouter, mcpWellKnownRouter } from "./src/server/mcp.js";
+import { db, mcpRouter, mcpWellKnownRouter } from "./src/server/mcp.js";
 import { validateExchangeKeys } from "./src/server/exchangeValidator.js";
+
+async function checkFirebaseConnection() {
+  try {
+    await db.collection('health_check').limit(1).get();
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: error.message };
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -36,10 +45,13 @@ async function startServer() {
   app.use("/api/", generalLimiter);
 
   // API routes
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", async (req, res) => {
     const encryptionKey = process.env.ENCRYPTION_KEY || "";
+    const firebaseStatus = await checkFirebaseConnection();
+    
     res.json({
-      status: "ok",
+      status: firebaseStatus.ok ? "ok" : "error",
+      firebase: firebaseStatus,
       config: {
         encryptionKeyConfigured: encryptionKey.length === 64,
         firebaseAdminCredentialsConfigured: Boolean(
@@ -97,8 +109,16 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  app.listen(PORT, "0.0.0.0", async () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+    
+    // Startup health check
+    const firebaseStatus = await checkFirebaseConnection();
+    if (firebaseStatus.ok) {
+      console.log('Firebase connection: OK');
+    } else {
+      console.error('Firebase connection: FAILED', firebaseStatus.error);
+    }
   });
 }
 
