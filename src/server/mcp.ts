@@ -14,6 +14,7 @@ import crypto from 'crypto';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { logger } from './logger.js';
 import { validateExchangeKeys } from './exchangeValidator.js';
+import { getFxCandles, getFxQuote, getTechnicalIndicator, SUPPORTED_TWELVE_INDICATORS } from './marketData.js';
 
 // --- Encryption Helpers ---
 export const ALGORITHM = 'aes-256-gcm';
@@ -332,6 +333,7 @@ const oauthProvider = new FirebaseOAuthProvider(publicBaseUrl || 'http://localho
 const resourceMetadataUrl = new URL('/api/mcp/.well-known/oauth-protected-resource', publicBaseUrl || 'http://localhost:3000').href;
 const SUPPORTED_PROVIDERS = ['binance', 'bybit'] as const;
 const MAX_TOOL_RESPONSE_CHARS = 60_000;
+export const MARKET_DATA_MCP_TOOL_NAMES = ['get_fx_quote', 'get_fx_candles', 'get_technical_indicator'] as const;
 
 function base64UrlSha256(value: string) {
     return crypto
@@ -567,6 +569,60 @@ function createMcpServer(userId: string | null) {
                         },
                         required: ["provider", "method"]
                     },
+                },
+                {
+                    name: MARKET_DATA_MCP_TOOL_NAMES[0],
+                    description: "Fetch a real-time forex quote for a currency pair using platform market-data providers. OANDA is preferred when provider is auto.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            symbol: { type: "string", description: "Forex pair, for example EUR/USD, EUR_USD, or EURUSD." },
+                            provider: { type: "string", enum: ["auto", "oanda", "twelve"], description: "Market-data provider. Defaults to auto." }
+                        },
+                        required: ["symbol"]
+                    },
+                    annotations: {
+                        readOnlyHint: true,
+                    },
+                },
+                {
+                    name: MARKET_DATA_MCP_TOOL_NAMES[1],
+                    description: "Fetch forex candles for a currency pair. OANDA is the default provider; Twelve Data can be selected explicitly or used as auto fallback.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            symbol: { type: "string", description: "Forex pair, for example EUR/USD, EUR_USD, or EURUSD." },
+                            provider: { type: "string", enum: ["auto", "oanda", "twelve"], description: "Market-data provider. Defaults to oanda." },
+                            granularity: { type: "string", description: "OANDA-style candle granularity, for example M1, M5, H1, H4, D." },
+                            interval: { type: "string", description: "Twelve-style interval or generic interval, for example 1min, 5min, 1h, 1day." },
+                            count: { type: "number", description: "Maximum number of candles to return. Defaults to 100, capped at 5000." },
+                            from: { type: "string", description: "Optional start time/date accepted by the selected provider." },
+                            to: { type: "string", description: "Optional end time/date accepted by the selected provider." }
+                        },
+                        required: ["symbol"]
+                    },
+                    annotations: {
+                        readOnlyHint: true,
+                    },
+                },
+                {
+                    name: MARKET_DATA_MCP_TOOL_NAMES[2],
+                    description: "Fetch a technical indicator for a forex pair from Twelve Data. Supported indicators: sma, ema, rsi, macd, bbands, atr, adx, stoch.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            symbol: { type: "string", description: "Forex pair, for example EUR/USD, EUR_USD, or EURUSD." },
+                            indicator: { type: "string", enum: [...SUPPORTED_TWELVE_INDICATORS] },
+                            interval: { type: "string", description: "Twelve Data interval, for example 1min, 5min, 1h, 1day." },
+                            time_period: { type: "number", description: "Optional indicator period where supported, for example 14." },
+                            series_type: { type: "string", description: "Optional price series type where supported, for example close." },
+                            outputsize: { type: "number", description: "Optional number of values to return, capped at 5000." }
+                        },
+                        required: ["symbol", "indicator", "interval"]
+                    },
+                    annotations: {
+                        readOnlyHint: true,
+                    },
                 }
             ]
         };
@@ -678,6 +734,36 @@ function createMcpServer(userId: string | null) {
                         method: args.method,
                         result,
                     }))
+                }]
+            };
+        }
+
+        if (name === MARKET_DATA_MCP_TOOL_NAMES[0]) {
+            const result = await getFxQuote((args || {}) as any);
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === MARKET_DATA_MCP_TOOL_NAMES[1]) {
+            const result = await getFxCandles((args || {}) as any);
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === MARKET_DATA_MCP_TOOL_NAMES[2]) {
+            const result = await getTechnicalIndicator((args || {}) as any);
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
                 }]
             };
         }

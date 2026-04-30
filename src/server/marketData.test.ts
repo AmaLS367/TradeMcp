@@ -1,0 +1,74 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  buildOandaCandlesRequest,
+  buildOandaQuoteRequest,
+  buildTwelveIndicatorRequest,
+  normalizeFxSymbol,
+} from './marketData';
+import { MARKET_DATA_MCP_TOOL_NAMES } from './mcp';
+
+describe('market data helpers', () => {
+  beforeEach(() => {
+    vi.stubEnv('OANDA_API_KEY', 'oanda-token');
+    vi.stubEnv('OANDA_ACCOUNT_ID', 'oanda-account');
+    vi.stubEnv('OANDA_BASE_URL', 'https://api-fxpractice.oanda.com');
+    vi.stubEnv('TWELVE_DATA_API_KEY', 'twelve-token');
+    vi.stubEnv('TWELVE_DATA_BASE_URL', 'https://api.twelvedata.com');
+  });
+
+  it.each([
+    ['EUR/USD'],
+    ['EUR_USD'],
+    ['EURUSD'],
+  ])('normalizes %s to provider formats', (symbol) => {
+    expect(normalizeFxSymbol(symbol)).toEqual({
+      base: 'EUR',
+      quote: 'USD',
+      compact: 'EURUSD',
+      slash: 'EUR/USD',
+      oanda: 'EUR_USD',
+      twelve: 'EUR/USD',
+    });
+  });
+
+  it('rejects invalid symbols', () => {
+    expect(() => normalizeFxSymbol('')).toThrow('symbol must be a 6-letter forex pair');
+    expect(() => normalizeFxSymbol('EUR')).toThrow('symbol must be a 6-letter forex pair');
+    expect(() => normalizeFxSymbol(null)).toThrow('symbol must be a forex pair string');
+  });
+
+  it('builds OANDA quote request with account path and bearer auth', () => {
+    const request = buildOandaQuoteRequest('EUR/USD');
+
+    expect(request.url.href).toBe('https://api-fxpractice.oanda.com/v3/accounts/oanda-account/pricing?instruments=EUR_USD');
+    expect((request.init.headers as Record<string, string>).Authorization).toBe('Bearer oanda-token');
+  });
+
+  it('builds OANDA candle request with normalized granularity', () => {
+    const request = buildOandaCandlesRequest({ symbol: 'EURUSD', interval: '1min', count: 50 });
+
+    expect(request.url.href).toBe('https://api-fxpractice.oanda.com/v3/instruments/EUR_USD/candles?price=M&granularity=M1&count=50');
+    expect((request.init.headers as Record<string, string>).Authorization).toBe('Bearer oanda-token');
+  });
+
+  it('builds Twelve Data indicator request with apikey query param', () => {
+    const request = buildTwelveIndicatorRequest({
+      symbol: 'EUR_USD',
+      indicator: 'rsi',
+      interval: '1h',
+      time_period: 14,
+      series_type: 'close',
+      outputsize: 30,
+    });
+
+    expect(request.url.href).toBe('https://api.twelvedata.com/rsi?symbol=EUR%2FUSD&interval=1h&apikey=twelve-token&time_period=14&series_type=close&outputsize=30');
+  });
+
+  it('exports market data MCP tool names', () => {
+    expect(MARKET_DATA_MCP_TOOL_NAMES).toEqual([
+      'get_fx_quote',
+      'get_fx_candles',
+      'get_technical_indicator',
+    ]);
+  });
+});

@@ -10,6 +10,11 @@ const envSchema = z.object({
     return !!val;
   }, { message: 'Either FIREBASE_SERVICE_ACCOUNT_KEY or GOOGLE_APPLICATION_CREDENTIALS must be set' }),
   PUBLIC_BASE_URL: z.string().url().optional().or(z.literal('')),
+  OANDA_API_KEY: z.string().optional().or(z.literal('')),
+  OANDA_ACCOUNT_ID: z.string().optional().or(z.literal('')),
+  OANDA_BASE_URL: z.string().url().default('https://api-fxpractice.oanda.com'),
+  TWELVE_DATA_API_KEY: z.string().optional().or(z.literal('')),
+  TWELVE_DATA_BASE_URL: z.string().url().default('https://api.twelvedata.com'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 

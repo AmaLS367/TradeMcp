@@ -49,6 +49,12 @@ Optional:
 ```text
 PORT=3000
 PUBLIC_BASE_URL=https://vmi3245942.contaboserver.net
+VITE_PUBLIC_BASE_URL=https://vmi3245942.contaboserver.net/api/mcp/
+OANDA_API_KEY=...
+OANDA_ACCOUNT_ID=...
+OANDA_BASE_URL=https://api-fxpractice.oanda.com
+TWELVE_DATA_API_KEY=...
+TWELVE_DATA_BASE_URL=https://api.twelvedata.com
 ```
 
 ## Run
@@ -88,3 +94,15 @@ Lists callable CCXT methods for `binance` or `bybit`, including unified and raw 
 `call_exchange_method`
 
 Calls any callable CCXT method on the authenticated user's Binance or Bybit connection. Pass method arguments exactly as CCXT expects.
+
+`get_fx_quote`
+
+Returns a real-time forex quote for pairs like `EUR/USD`, `EUR_USD`, or `EURUSD`. Uses OANDA by default with Twelve Data fallback when provider is `auto`.
+
+`get_fx_candles`
+
+Returns forex candles from OANDA by default. Twelve Data can be selected with `provider: "twelve"`.
+
+`get_technical_indicator`
+
+Returns Twelve Data technical indicators for forex pairs. Supported indicators: `sma`, `ema`, `rsi`, `macd`, `bbands`, `atr`, `adx`, `stoch`.
