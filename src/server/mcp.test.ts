@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { encrypt, decrypt } from './mcp';
+import { encrypt, decrypt, sanitizeFirestoreData } from './mcp';
 
 // Mock process.env
 const ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -40,5 +40,31 @@ describe('Encryption Helpers', () => {
   it('should throw error for invalid ciphertext format', () => {
     expect(() => decrypt('invalidformat')).toThrow('Invalid ciphertext format');
     expect(() => decrypt('iv:tag')).toThrow('Invalid ciphertext format');
+  });
+});
+
+describe('Firestore sanitization', () => {
+  it('removes undefined values recursively before writes', () => {
+    expect(sanitizeFirestoreData({
+      client: {
+        client_id: 'client-1',
+        client_secret: undefined,
+        redirect_uris: ['https://chatgpt.com/callback', undefined],
+      },
+      params: {
+        state: undefined,
+        resource: 'https://example.com/api/mcp/',
+      },
+      untouched: null,
+    })).toEqual({
+      client: {
+        client_id: 'client-1',
+        redirect_uris: ['https://chatgpt.com/callback'],
+      },
+      params: {
+        resource: 'https://example.com/api/mcp/',
+      },
+      untouched: null,
+    });
   });
 });

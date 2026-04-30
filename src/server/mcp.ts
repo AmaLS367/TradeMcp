@@ -88,6 +88,24 @@ type StoredToken = {
     resource?: string; // Store as string for Firestore
 };
 
+export function sanitizeFirestoreData<T>(value: T): T {
+    if (Array.isArray(value)) {
+        return value
+            .filter((item) => item !== undefined)
+            .map((item) => sanitizeFirestoreData(item)) as T;
+    }
+
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value)
+                .filter(([, item]) => item !== undefined)
+                .map(([key, item]) => [key, sanitizeFirestoreData(item)])
+        ) as T;
+    }
+
+    return value;
+}
+
 class FirestoreClientsStore {
     private collection: FirebaseFirestore.CollectionReference;
 
@@ -113,9 +131,7 @@ class FirestoreClientsStore {
                 : crypto.randomBytes(32).toString('hex'),
             client_secret_expires_at: 0,
         };
-        await this.collection.doc(client.client_id).set(
-            Object.fromEntries(Object.entries(client).filter(([, value]) => value !== undefined))
-        );
+        await this.collection.doc(client.client_id).set(sanitizeFirestoreData(client));
         return client;
     }
 }
@@ -148,7 +164,7 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
             },
             expiresAt: Date.now() + 10 * 60 * 1000,
         };
-        await this.pendingCollection.doc(requestId).set(pendingData);
+        await this.pendingCollection.doc(requestId).set(sanitizeFirestoreData(pendingData));
 
         const target = new URL('/trade-mcp/', this.publicBaseUrl);
         target.searchParams.set('oauth_request', requestId);
@@ -175,7 +191,7 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
             userId,
             expiresAt: Date.now() + 5 * 60 * 1000,
         };
-        await this.codesCollection.doc(code).set(codeData);
+        await this.codesCollection.doc(code).set(sanitizeFirestoreData(codeData));
 
         const redirectUrl = new URL(pending.params.redirectUri);
         redirectUrl.searchParams.set('code', code);
@@ -305,14 +321,14 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
         };
         
         // Store access token in Firestore
-        await this.tokensCollection.doc(`access_${accessToken}`).set(stored);
+        await this.tokensCollection.doc(`access_${accessToken}`).set(sanitizeFirestoreData(stored));
         
         // Store refresh token in Firestore with longer expiry
-        await this.tokensCollection.doc(`refresh_${refreshToken}`).set({
+        await this.tokensCollection.doc(`refresh_${refreshToken}`).set(sanitizeFirestoreData({
             ...stored,
             token: refreshToken,
             expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-        });
+        }));
 
         return {
             access_token: accessToken,
