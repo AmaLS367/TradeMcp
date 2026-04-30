@@ -12,19 +12,23 @@ import { getFirestore } from 'firebase-admin/firestore';
 import ccxt from 'ccxt';
 import crypto from 'crypto';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { logger } from './logger.js';
+import { validateExchangeKeys } from './exchangeValidator.js';
 
 // --- Encryption Helpers ---
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "";
-const ALGORITHM = 'aes-256-gcm';
+export const ALGORITHM = 'aes-256-gcm';
 
-if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 64) {
-    throw new Error('ENCRYPTION_KEY must be a 64-character hex string. Generate: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+export function getEncryptionKey() {
+    return process.env.ENCRYPTION_KEY || "";
 }
 
-function encrypt(text: string) {
-    if (!ENCRYPTION_KEY) throw new Error("ENCRYPTION_KEY not set");
+export function encrypt(text: string) {
+    const keyStr = getEncryptionKey();
+    if (!keyStr || keyStr.length !== 64) {
+        throw new Error('ENCRYPTION_KEY must be a 64-character hex string');
+    }
     const iv = crypto.randomBytes(12);
-    const key = Buffer.from(ENCRYPTION_KEY, 'hex');
+    const key = Buffer.from(keyStr, 'hex');
     const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
@@ -32,14 +36,17 @@ function encrypt(text: string) {
     return `${iv.toString('hex')}:${authTag}:${encrypted}`;
 }
 
-function decrypt(ciphertext: string) {
-    if (!ENCRYPTION_KEY) throw new Error("ENCRYPTION_KEY not set");
+export function decrypt(ciphertext: string) {
+    const keyStr = getEncryptionKey();
+    if (!keyStr || keyStr.length !== 64) {
+        throw new Error('ENCRYPTION_KEY must be a 64-character hex string');
+    }
     const [ivHex, authTagHex, encryptedHex] = ciphertext.split(':');
     if (!ivHex || !authTagHex || !encryptedHex) throw new Error("Invalid ciphertext format");
     
     const iv = Buffer.from(ivHex, 'hex');
     const authTag = Buffer.from(authTagHex, 'hex');
-    const key = Buffer.from(ENCRYPTION_KEY, 'hex');
+    const key = Buffer.from(keyStr, 'hex');
     
     const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
     decipher.setAuthTag(authTag);
@@ -59,7 +66,7 @@ if (!admin.apps.length) {
     });
 }
 
-const db = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
 
 type PendingAuthorization = {
     client: OAuthClientInformationFull;
@@ -77,17 +84,25 @@ type StoredToken = {
     userId: string;
     scopes: string[];
     expiresAt: number;
-    resource?: URL;
+    resource?: string; // Store as string for Firestore
 };
 
-class InMemoryClientsStore {
-    private clients = new Map<string, OAuthClientInformationFull>();
+class FirestoreClientsStore {
+    private collection: FirebaseFirestore.CollectionReference;
 
-    async getClient(clientId: string) {
-        return this.clients.get(clientId);
+    constructor(db: FirebaseFirestore.Firestore) {
+        this.collection = db.collection('oauth_clients');
     }
 
-    async registerClient(clientMetadata: OAuthClientMetadata & { client_id?: string }) {
+    async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
+        const doc = await this.collection.doc(clientId).get();
+        if (!doc.exists) {
+            return undefined;
+        }
+        return doc.data() as OAuthClientInformationFull;
+    }
+
+    async registerClient(clientMetadata: OAuthClientMetadata & { client_id?: string }): Promise<OAuthClientInformationFull> {
         const client: OAuthClientInformationFull = {
             ...clientMetadata,
             client_id: clientMetadata.client_id || crypto.randomUUID(),
@@ -97,19 +112,23 @@ class InMemoryClientsStore {
                 : crypto.randomBytes(32).toString('hex'),
             client_secret_expires_at: 0,
         };
-        this.clients.set(client.client_id, client);
+        await this.collection.doc(client.client_id).set(client);
         return client;
     }
 }
 
 class FirebaseOAuthProvider implements OAuthServerProvider {
-    readonly clientsStore = new InMemoryClientsStore();
-    private pending = new Map<string, PendingAuthorization>();
-    private codes = new Map<string, AuthorizationCode>();
-    private accessTokens = new Map<string, StoredToken>();
-    private refreshTokens = new Map<string, StoredToken>();
+    readonly clientsStore: FirestoreClientsStore;
+    private pendingCollection: FirebaseFirestore.CollectionReference;
+    private codesCollection: FirebaseFirestore.CollectionReference;
+    private tokensCollection: FirebaseFirestore.CollectionReference;
 
-    constructor(private readonly publicBaseUrl: string) {}
+    constructor(private readonly publicBaseUrl: string, db: FirebaseFirestore.Firestore) {
+        this.clientsStore = new FirestoreClientsStore(db);
+        this.pendingCollection = db.collection('oauth_pending');
+        this.codesCollection = db.collection('oauth_codes');
+        this.tokensCollection = db.collection('oauth_tokens');
+    }
 
     async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: express.Response) {
         if (!isRegisteredRedirectUri(client, params.redirectUri)) {
@@ -117,11 +136,16 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
         }
 
         const requestId = crypto.randomUUID();
-        this.pending.set(requestId, {
+        // Serialize URL to string for Firestore to prevent write errors
+        const pendingData: any = {
             client,
-            params,
+            params: {
+                ...params,
+                resource: params.resource?.toString(),
+            },
             expiresAt: Date.now() + 10 * 60 * 1000,
-        });
+        };
+        await this.pendingCollection.doc(requestId).set(pendingData);
 
         const target = new URL('/trade-mcp/', this.publicBaseUrl);
         target.searchParams.set('oauth_request', requestId);
@@ -129,19 +153,26 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
     }
 
     async completeAuthorization(requestId: string, userId: string) {
-        const pending = this.pending.get(requestId);
-        if (!pending || pending.expiresAt < Date.now()) {
-            this.pending.delete(requestId);
+        const pendingDoc = await this.pendingCollection.doc(requestId).get();
+        if (!pendingDoc.exists) {
+            throw new Error('OAuth authorization request expired or not found');
+        }
+        const pending = pendingDoc.data() as PendingAuthorization;
+        
+        if (pending.expiresAt < Date.now()) {
+            await this.pendingCollection.doc(requestId).delete();
             throw new Error('OAuth authorization request expired');
         }
 
         const code = crypto.randomUUID();
-        this.pending.delete(requestId);
-        this.codes.set(code, {
+        await this.pendingCollection.doc(requestId).delete();
+        
+        const codeData: AuthorizationCode = {
             ...pending,
             userId,
             expiresAt: Date.now() + 5 * 60 * 1000,
-        });
+        };
+        await this.codesCollection.doc(code).set(codeData);
 
         const redirectUrl = new URL(pending.params.redirectUri);
         redirectUrl.searchParams.set('code', code);
@@ -152,7 +183,7 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
     }
 
     async challengeForAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string) {
-        const code = this.getCode(client, authorizationCode);
+        const code = await this.getCode(client, authorizationCode);
         return code.params.codeChallenge;
     }
 
@@ -160,33 +191,68 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
         return this.clientsStore.getClient(clientId);
     }
 
-    getAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string) {
-        return this.getCode(client, authorizationCode);
+    async getAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string) {
+        const codeDoc = await this.codesCollection.doc(authorizationCode).get();
+        if (!codeDoc.exists) {
+            throw new Error('Invalid or expired authorization code');
+        }
+        const code = codeDoc.data() as AuthorizationCode;
+        if (code.client.client_id !== client.client_id) {
+             throw new Error('Authorization code was not issued to this client');
+        }
+        return code;
     }
 
     async exchangeAuthorizationCode(client: OAuthClientInformationFull, authorizationCode: string, _codeVerifier?: string, redirectUri?: string, resource?: URL): Promise<OAuthTokens> {
-        const code = this.getCode(client, authorizationCode);
-        if (redirectUri && redirectUri !== code.params.redirectUri) {
-            throw new Error('redirect_uri mismatch');
-        }
-        this.codes.delete(authorizationCode);
+        const codeRef = this.codesCollection.doc(authorizationCode);
+        
+        const result = await db.runTransaction(async (transaction) => {
+            const codeDoc = await transaction.get(codeRef);
+            if (!codeDoc.exists) {
+                throw new Error('Invalid or expired authorization code');
+            }
+            const code = codeDoc.data() as AuthorizationCode;
+            
+            if (code.expiresAt < Date.now()) {
+                transaction.delete(codeRef);
+                throw new Error('Invalid or expired authorization code');
+            }
+            if (code.client.client_id !== client.client_id) {
+                throw new Error('invalid_client');
+            }
+            if (redirectUri && redirectUri !== code.params.redirectUri) {
+                throw new Error('redirect_uri mismatch');
+            }
 
-        return this.issueTokens(client.client_id, code.userId, code.params.scopes || [], resource || code.params.resource);
+            transaction.delete(codeRef);
+            return code;
+        });
+
+        return this.issueTokens(client.client_id, result.userId, result.params.scopes || [], resource?.toString() || (result.params.resource as unknown as string));
     }
 
     async exchangeRefreshToken(client: OAuthClientInformationFull, refreshToken: string, scopes?: string[], resource?: URL): Promise<OAuthTokens> {
-        const token = this.refreshTokens.get(refreshToken);
-        if (!token || token.clientId !== client.client_id) {
+        const tokenDoc = await this.tokensCollection.doc(`refresh_${refreshToken}`).get();
+        if (!tokenDoc.exists) {
+            throw new Error('Invalid refresh token');
+        }
+        const token = tokenDoc.data() as StoredToken;
+        if (token.clientId !== client.client_id) {
             throw new Error('Invalid refresh token');
         }
 
-        return this.issueTokens(client.client_id, token.userId, scopes || token.scopes, resource || token.resource);
+        return this.issueTokens(client.client_id, token.userId, scopes || token.scopes, resource?.toString() || token.resource);
     }
 
     async verifyAccessToken(token: string): Promise<AuthInfo> {
-        const stored = this.accessTokens.get(token);
-        if (!stored || stored.expiresAt < Date.now()) {
-            this.accessTokens.delete(token);
+        const tokenDoc = await this.tokensCollection.doc(`access_${token}`).get();
+        if (!tokenDoc.exists) {
+            throw new Error('Invalid or expired access token');
+        }
+        const stored = tokenDoc.data() as StoredToken;
+        
+        if (stored.expiresAt < Date.now()) {
+            await this.tokensCollection.doc(`access_${token}`).delete();
             throw new Error('Invalid or expired access token');
         }
 
@@ -195,20 +261,25 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
             clientId: stored.clientId,
             scopes: stored.scopes,
             expiresAt: Math.floor(stored.expiresAt / 1000),
-            resource: stored.resource,
+            resource: stored.resource ? new URL(stored.resource) : undefined,
             extra: { userId: stored.userId },
         };
     }
 
     async revokeToken(_client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest) {
-        this.accessTokens.delete(request.token);
-        this.refreshTokens.delete(request.token);
+        await this.tokensCollection.doc(`access_${request.token}`).delete();
+        await this.tokensCollection.doc(`refresh_${request.token}`).delete();
     }
 
-    private getCode(client: OAuthClientInformationFull, authorizationCode: string) {
-        const code = this.codes.get(authorizationCode);
-        if (!code || code.expiresAt < Date.now()) {
-            this.codes.delete(authorizationCode);
+    private async getCode(client: OAuthClientInformationFull, authorizationCode: string) {
+        const codeDoc = await this.codesCollection.doc(authorizationCode).get();
+        if (!codeDoc.exists) {
+            throw new Error('Invalid or expired authorization code');
+        }
+        const code = codeDoc.data() as AuthorizationCode;
+        
+        if (code.expiresAt < Date.now()) {
+            await this.codesCollection.doc(authorizationCode).delete();
             throw new Error('Invalid or expired authorization code');
         }
         if (code.client.client_id !== client.client_id) {
@@ -217,7 +288,7 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
         return code;
     }
 
-    private issueTokens(clientId: string, userId: string, scopes: string[], resource?: URL): OAuthTokens {
+    private async issueTokens(clientId: string, userId: string, scopes: string[], resource?: string): Promise<OAuthTokens> {
         const accessToken = crypto.randomBytes(32).toString('hex');
         const refreshToken = crypto.randomBytes(32).toString('hex');
         const expiresAt = Date.now() + 60 * 60 * 1000;
@@ -229,8 +300,12 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
             expiresAt,
             resource,
         };
-        this.accessTokens.set(accessToken, stored);
-        this.refreshTokens.set(refreshToken, {
+        
+        // Store access token in Firestore
+        await this.tokensCollection.doc(`access_${accessToken}`).set(stored);
+        
+        // Store refresh token in Firestore with longer expiry
+        await this.tokensCollection.doc(`refresh_${refreshToken}`).set({
             ...stored,
             token: refreshToken,
             expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
@@ -246,10 +321,13 @@ class FirebaseOAuthProvider implements OAuthServerProvider {
     }
 }
 
-const publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://vmi3245942.contaboserver.net';
-const mcpServerUrl = new URL('/api/mcp/', publicBaseUrl);
-const oauthProvider = new FirebaseOAuthProvider(publicBaseUrl);
-const resourceMetadataUrl = new URL('/api/mcp/.well-known/oauth-protected-resource', publicBaseUrl).href;
+const publicBaseUrl = process.env.PUBLIC_BASE_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3000');
+if (!publicBaseUrl && process.env.NODE_ENV === 'production') {
+    console.warn('WARNING: PUBLIC_BASE_URL is not set in production. OAuth and MCP endpoints may not work correctly.');
+}
+const mcpServerUrl = new URL('/api/mcp/', publicBaseUrl || 'http://localhost:3000');
+const oauthProvider = new FirebaseOAuthProvider(publicBaseUrl || 'http://localhost:3000', db);
+const resourceMetadataUrl = new URL('/api/mcp/.well-known/oauth-protected-resource', publicBaseUrl || 'http://localhost:3000').href;
 const SUPPORTED_PROVIDERS = ['binance', 'bybit'] as const;
 const MAX_TOOL_RESPONSE_CHARS = 60_000;
 
@@ -755,7 +833,7 @@ mcpRouter.get('/authorize', async (req, res) => {
             resource: typeof req.query.resource === 'string' ? new URL(req.query.resource) : mcpServerUrl,
         }, res);
     } catch (err: any) {
-        console.error('OAuth authorize error:', err);
+        logger.error(err, 'OAuth authorize error:', err);
         res.status(400).send(err.message || 'OAuth authorization failed');
     }
 });
@@ -778,7 +856,7 @@ mcpRouter.post('/token', express.urlencoded({ extended: false }), async (req, re
         if (req.body.grant_type === 'authorization_code') {
             const code = String(req.body.code || '');
             const verifier = String(req.body.code_verifier || '');
-            const codeData = oauthProvider.getAuthorizationCode(client, code);
+            const codeData = await oauthProvider.getAuthorizationCode(client, code);
             if (!verifier || base64UrlSha256(verifier) !== codeData.params.codeChallenge) {
                 res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid PKCE verifier' });
                 return;
@@ -808,7 +886,7 @@ mcpRouter.post('/token', express.urlencoded({ extended: false }), async (req, re
 
         res.status(400).json({ error: 'unsupported_grant_type' });
     } catch (err: any) {
-        console.error('OAuth token error:', err);
+        logger.error(err, 'OAuth token error:', err);
         res.status(400).json({ error: 'invalid_grant', error_description: err.message || 'OAuth token exchange failed' });
     }
 });
@@ -834,7 +912,7 @@ mcpRouter.post('/oauth/complete', async (req, res) => {
         const redirectUrl = await oauthProvider.completeAuthorization(requestId, decoded.uid);
         res.json({ redirectUrl });
     } catch (err: any) {
-        console.error('OAuth completion error:', err);
+        logger.error(err, 'OAuth completion error:', err);
         res.status(400).json({ error: err.message || 'OAuth completion failed' });
     }
 });
@@ -873,6 +951,15 @@ mcpRouter.post('/connections', verifyAuth, async (req, res) => {
     }
 
     try {
+        // Backend validation of exchange keys before saving
+        const validationResult = await validateExchangeKeys(provider as 'binance' | 'bybit', apiKey, apiSecret);
+        if (!validationResult.valid) {
+            return res.status(400).json({ 
+                error: 'invalid_exchange_keys', 
+                message: validationResult.error || 'Failed to validate exchange keys' 
+            });
+        }
+
         const apiKeyEncrypted = encrypt(apiKey);
         const apiSecretEncrypted = encrypt(apiSecret);
         const apiKeyPreview = `${apiKey.slice(0, 8)}...`;
@@ -889,7 +976,7 @@ mcpRouter.post('/connections', verifyAuth, async (req, res) => {
 
         res.json({ success: true, id: docRef.id });
     } catch (err: any) {
-        console.error("Error creating connection:", err);
+        logger.error(err, "Error creating connection:", err);
         res.status(500).send(err.message);
     }
 });
@@ -946,7 +1033,7 @@ mcpRouter.post('/', oauthMiddleware, async (req, res) => {
             server?.close();
         });
     } catch (err: any) {
-        console.error("MCP streamable HTTP error:", err);
+        logger.error(err, "MCP streamable HTTP error:", err);
         if (!res.headersSent) {
             res.status(err.message === 'Missing auth' || err.message === 'Invalid API key' ? 401 : 500).json({
                 jsonrpc: "2.0",
@@ -985,7 +1072,7 @@ mcpRouter.get('/sse', oauthMiddleware, async (req, res) => {
         });
 
     } catch (err: any) {
-        console.error("MCP auth error:", err);
+        logger.error(err, "MCP auth error:", err);
         res.status(401).send(err.message);
     }
 });
@@ -1019,7 +1106,7 @@ db.collectionGroup('trade_proposals')
                         executionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
                     });
                 } catch (claimErr: any) {
-                    console.error("Failed to claim proposal, skipping:", claimErr);
+                    logger.error(claimErr, "Failed to claim proposal, skipping:");
                     continue;
                 }
 
@@ -1065,7 +1152,7 @@ db.collectionGroup('trade_proposals')
                     });
 
                 } catch (err: any) {
-                    console.error("Execution error:", err);
+                    logger.error(err, "Execution error:", err);
                     await doc.ref.update({
                         status: 'failed',
                         executionResult: err.message,
@@ -1075,5 +1162,5 @@ db.collectionGroup('trade_proposals')
             }
         }
     }, err => {
-        console.error("Execution engine listener error", err);
+        logger.error(err, "Execution engine listener error", err);
     });

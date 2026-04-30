@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
@@ -9,6 +10,7 @@ import { Label } from '../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Toaster, toast } from 'sonner';
 
 enum OperationType {
   CREATE = 'create',
@@ -25,6 +27,12 @@ interface FirestoreErrorInfo {
   authInfo: any;
 }
 
+function handleUIError(error: any, context: string) {
+    console.error(`[${context}]`, error);
+    const message = error instanceof Error ? error.message : String(error);
+    toast.error(message);
+}
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
@@ -37,6 +45,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
+  toast.error(`Database error during ${operationType} on ${path || 'unknown path'}`);
 }
 
 function AuthGuard() {
@@ -190,7 +199,7 @@ function OAuthAuthorize() {
 function MCPSettings() {
    const [copied, setCopied] = useState("");
 
-   const baseUrl = "https://vmi3245942.contaboserver.net/api/mcp/";
+   const baseUrl = import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin + '/api/mcp/';
 
    const handleCopy = (text: string, key: string) => {
        navigator.clipboard.writeText(text);
@@ -228,6 +237,8 @@ function ExchangeConnections({ user }: { user: User }) {
   const [provider, setProvider] = useState('binance');
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
+  const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
+  const [validationError, setValidationError] = useState<string>('');
 
   useEffect(() => {
     const q = query(collection(db, `users/${user.uid}/exchange_connections`));
@@ -240,27 +251,60 @@ function ExchangeConnections({ user }: { user: User }) {
 
   const handleAdd = async (e: React.FormEvent) => {
       e.preventDefault();
+      
+      // Сначала валидируем ключи
+      setValidationStatus('validating');
+      setValidationError('');
+      
       try {
-          const idToken = await user.getIdToken();
-          const response = await fetch('/api/mcp/connections', {
-              method: 'POST',
-              headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${idToken}`
-              },
-              body: JSON.stringify({ provider, apiKey, apiSecret })
-          });
-          
-          if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(errorText || 'Failed to add connection');
-          }
-          
-          setApiKey('');
-          setApiSecret('');
+        const idToken = await user.getIdToken();
+        const validateResponse = await fetch('/api/validate-keys', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({ 
+            exchange: provider, 
+            apiKey, 
+            apiSecret 
+          })
+        });
+        
+        const validateResult = await validateResponse.json();
+        
+        if (!validateResult.valid) {
+          setValidationStatus('invalid');
+          setValidationError(validateResult.error || 'Неизвестная ошибка валидации');
+          return;
+        }
+        
+        setValidationStatus('valid');
+        
+        // Если валидация успешна, добавляем подключение
+        const response = await fetch('/api/mcp/connections', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${idToken}`
+            },
+            body: JSON.stringify({ provider, apiKey, apiSecret })
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || 'Failed to add connection');
+        }
+        
+        setApiKey('');
+        setApiSecret('');
+        setValidationStatus('idle');
+        setValidationError('');
+        toast.success('Ключи успешно проверены и подключение добавлено!');
       } catch (err: any) {
-          console.error('Error adding connection:', err);
-          alert(err.message);
+          setValidationStatus('invalid');
+          setValidationError(err.message);
+          handleUIError(err, 'Add Connection');
       }
   };
 
@@ -269,6 +313,7 @@ function ExchangeConnections({ user }: { user: User }) {
            await updateDoc(doc(db, `users/${user.uid}/exchange_connections`, id), {
                isActive: !currentStatus
            });
+           toast.success(`Connection ${currentStatus ? 'deactivated' : 'activated'}`);
        } catch (err) {
            handleFirestoreError(err, OperationType.UPDATE, 'exchange_connections');
        }
@@ -288,9 +333,9 @@ function ExchangeConnections({ user }: { user: User }) {
               const errorText = await response.text();
               throw new Error(errorText || 'Failed to delete connection');
           }
+          toast.success('Connection deleted successfully');
       } catch (err: any) {
-          console.error('Error deleting connection:', err);
-          alert(err.message);
+          handleUIError(err, 'Delete Connection');
       }
   };
 
@@ -318,7 +363,22 @@ function ExchangeConnections({ user }: { user: User }) {
                          <Label>API Secret</Label>
                          <Input type="password" value={apiSecret} onChange={e => setApiSecret(e.target.value)} required />
                     </div>
-                    <Button type="submit" className="w-full">Save Connection</Button>
+                    {validationStatus === 'validating' && (
+                      <div className="text-sm text-blue-600">Проверка ключей...</div>
+                    )}
+                    {validationStatus === 'valid' && (
+                      <div className="text-sm text-green-600">✓ Ключи успешно проверены</div>
+                    )}
+                    {validationStatus === 'invalid' && validationError && (
+                      <div className="text-sm text-red-600">✗ {validationError}</div>
+                    )}
+                    <Button 
+                      type="submit" 
+                      className="w-full" 
+                      disabled={validationStatus === 'validating'}
+                    >
+                      {validationStatus === 'validating' ? 'Проверка...' : 'Save Connection'}
+                    </Button>
                 </form>
             </CardContent>
         </Card>
@@ -368,9 +428,9 @@ function ProposalsList({ user }: { user: User }) {
               status,
               approvedAt: new Date().toISOString()
           });
+          toast.success(`Proposal ${status}`);
       } catch (err) {
           handleFirestoreError(err, OperationType.UPDATE, 'trade_proposals');
-          alert('Failed to update proposal');
       }
   };
 
@@ -429,9 +489,12 @@ function ProposalsList({ user }: { user: User }) {
 }
 
 export default function App() {
-  if (new URLSearchParams(window.location.search).has('oauth_request')) {
-    return <OAuthAuthorize />;
-  }
-
-  return <AuthGuard />;
+  const isOAuth = new URLSearchParams(window.location.search).has('oauth_request');
+  
+  return (
+    <>
+      <Toaster position="top-right" richColors />
+      {isOAuth ? <OAuthAuthorize /> : <AuthGuard />}
+    </>
+  );
 }
