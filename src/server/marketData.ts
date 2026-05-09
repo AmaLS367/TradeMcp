@@ -1,3 +1,5 @@
+import { recordProviderLatency } from './providerLatency.js';
+
 const OANDA_INTERVALS: Record<string, string> = {
   '5s': 'S5',
   '10s': 'S10',
@@ -153,25 +155,30 @@ export function normalizePositiveInteger(value: unknown, fallback: number, max: 
   return Math.min(numberValue, max);
 }
 
-async function fetchJson(url: URL, init?: RequestInit) {
-  const response = await fetch(url, init);
-  const text = await response.text();
-  let payload: unknown;
+async function fetchJson(url: URL, init?: RequestInit, providerName?: string) {
+  const latency = providerName ? recordProviderLatency(providerName, url.pathname) : null;
   try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    payload = { raw: text };
-  }
+    const response = await fetch(url, init);
+    const text = await response.text();
+    let payload: unknown;
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { raw: text };
+    }
 
-  if (!response.ok) {
-    throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload)}`);
-  }
+    if (!response.ok) {
+      throw new Error(`Provider request failed (${response.status}): ${JSON.stringify(payload)}`);
+    }
 
-  if (payload && typeof payload === 'object' && 'status' in payload && (payload as any).status === 'error') {
-    throw new Error(`Provider request failed: ${JSON.stringify(payload)}`);
-  }
+    if (payload && typeof payload === 'object' && 'status' in payload && (payload as any).status === 'error') {
+      throw new Error(`Provider request failed: ${JSON.stringify(payload)}`);
+    }
 
-  return payload;
+    return payload;
+  } finally {
+    latency?.stop();
+  }
 }
 
 function requireOandaCredentials(credentials?: OandaCredentials) {
@@ -298,12 +305,12 @@ export async function getFxQuote(args: FxQuoteArgs, credentials: MarketDataCrede
 
   if (provider === 'twelve') {
     const request = buildTwelveQuoteRequest(args.symbol, credentials.twelve_data);
-    return { provider: 'twelve', symbol: request.normalized.slash, data: await fetchJson(request.url) };
+    return { provider: 'twelve', symbol: request.normalized.slash, data: await fetchJson(request.url, undefined, 'twelve') };
   }
 
   try {
     const request = buildOandaQuoteRequest(args.symbol, credentials.oanda);
-    return { provider: 'oanda', symbol: request.normalized.slash, data: await fetchJson(request.url, request.init) };
+    return { provider: 'oanda', symbol: request.normalized.slash, data: await fetchJson(request.url, request.init, 'oanda') };
   } catch (error) {
     if (provider === 'oanda') {
       throw error;
@@ -314,7 +321,7 @@ export async function getFxQuote(args: FxQuoteArgs, credentials: MarketDataCrede
       symbol: request.normalized.slash,
       fallbackFrom: 'oanda',
       fallbackReason: error instanceof Error ? error.message : String(error),
-      data: await fetchJson(request.url),
+      data: await fetchJson(request.url, undefined, 'twelve'),
     };
   }
 }
@@ -324,12 +331,12 @@ export async function getFxCandles(args: FxCandlesArgs, credentials: MarketDataC
 
   if (provider === 'twelve') {
     const request = buildTwelveCandlesRequest(args, credentials.twelve_data);
-    return { provider: 'twelve', symbol: request.normalized.slash, data: await fetchJson(request.url) };
+    return { provider: 'twelve', symbol: request.normalized.slash, data: await fetchJson(request.url, undefined, 'twelve') };
   }
 
   try {
     const request = buildOandaCandlesRequest(args, credentials.oanda);
-    return { provider: 'oanda', symbol: request.normalized.slash, data: await fetchJson(request.url, request.init) };
+    return { provider: 'oanda', symbol: request.normalized.slash, data: await fetchJson(request.url, request.init, 'oanda') };
   } catch (error) {
     if (provider === 'oanda') {
       throw error;
@@ -340,7 +347,7 @@ export async function getFxCandles(args: FxCandlesArgs, credentials: MarketDataC
       symbol: request.normalized.slash,
       fallbackFrom: 'oanda',
       fallbackReason: error instanceof Error ? error.message : String(error),
-      data: await fetchJson(request.url),
+      data: await fetchJson(request.url, undefined, 'twelve'),
     };
   }
 }
@@ -351,6 +358,6 @@ export async function getTechnicalIndicator(args: TechnicalIndicatorArgs, creden
     provider: 'twelve',
     indicator: request.indicator,
     symbol: request.normalized.slash,
-    data: await fetchJson(request.url),
+    data: await fetchJson(request.url, undefined, 'twelve'),
   };
 }

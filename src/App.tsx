@@ -38,8 +38,10 @@ import {
   Bitcoin,
   ChartNoAxesColumnIncreasing,
   Plug2,
+  BarChart3,
 } from 'lucide-react';
 import { AIClientConnections } from './AIClientConnections';
+import Observability from './Observability';
 
 enum OperationType {
   CREATE = 'create',
@@ -172,6 +174,12 @@ function AuthGuard() {
             onClick={() => setActiveTab('mcp-market')}
           />
           <NavItem
+            active={activeTab === 'observability'}
+            icon={BarChart3}
+            label="Observability"
+            onClick={() => setActiveTab('observability')}
+          />
+          <NavItem
             active={activeTab === 'ai-clients'}
             icon={Plug2}
             label="Connect"
@@ -228,7 +236,7 @@ function AuthGuard() {
         {/* Mobile Nav */}
         <div className="lg:hidden px-6 py-2 border-b border-border/40 bg-muted/30">
            <div className="flex gap-2 overflow-x-auto no-scrollbar py-2">
-              {['proposals', 'connections', 'data-providers', 'mcp-market', 'ai-clients', 'settings'].map(tab => (
+              {['proposals', 'connections', 'data-providers', 'mcp-market', 'observability', 'ai-clients', 'settings'].map(tab => (
                 <Button 
                   key={tab}
                   variant={activeTab === tab ? 'default' : 'ghost'}
@@ -255,6 +263,7 @@ function AuthGuard() {
               {activeTab === 'connections' && <ExchangeConnections user={user} />}
               {activeTab === 'data-providers' && <MarketDataProviders user={user} />}
               {activeTab === 'mcp-market' && <McpMarket user={user} />}
+              {activeTab === 'observability' && <Observability user={user} />}
               {activeTab === 'ai-clients' && <AIClientConnections />}
               {activeTab === 'settings' && <MCPSettings />}
             </motion.div>

@@ -41,6 +41,7 @@ export { sanitizeFirestoreData } from './firestoreUtils.js';
 export { TRADEMCP_DOCS_TOOL_NAME, getTradeMcpResearchGuide } from './tradeMcpResearchGuide.js';
 export { MARKET_DATA_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, shouldIncludeTool } from './mcpToolPolicy.js';
 export { db } from './mcpFirebase.js';
+import { detectClientType, recordOrderEvent, getToolMetrics } from './observability.js';
 
 const publicBaseUrl = process.env.PUBLIC_BASE_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3000');
 if (!publicBaseUrl && process.env.NODE_ENV === 'production') {
@@ -630,6 +631,50 @@ mcpRouter.delete('/keys/:id', verifyAuth, async (req, res) => {
     res.json({ success: true });
 });
 
+// --- Observability Routes ---
+
+mcpRouter.get('/observability/metrics', verifyAuth, async (req, res) => {
+    const userId = (req as any).userId;
+    const since = req.query.since ? new Date(req.query.since as string) : undefined;
+    try {
+        const metrics = await getToolMetrics(userId, since);
+        res.json(metrics);
+    } catch (err: any) {
+        logger.error(err, 'Error fetching observability metrics:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+mcpRouter.get('/observability/alerts', verifyAuth, async (req, res) => {
+    const userId = (req as any).userId;
+    try {
+        const snap = await db.collection('alerts')
+            .where('userId', '==', userId)
+            .where('resolved', '==', false)
+            .orderBy('severity', 'desc')
+            .orderBy('createdAt', 'desc')
+            .get();
+        const alerts = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        res.json({ alerts });
+    } catch (err: any) {
+        logger.error(err, 'Error fetching alerts:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+mcpRouter.post('/observability/alerts/:id/resolve', verifyAuth, async (req, res) => {
+    const userId = (req as any).userId;
+    try {
+        await db.collection('alerts').doc(req.params.id).update({
+            resolved: true,
+            resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 mcpRouter.post('/', oauthMiddleware, async (req, res) => {
     let server: Server | undefined;
     let transport: StreamableHTTPServerTransport | undefined;
@@ -637,7 +682,8 @@ mcpRouter.post('/', oauthMiddleware, async (req, res) => {
     try {
         const userId = await userIdFromMcpRequest(req);
         const profile = typeof req.query.profile === 'string' ? req.query.profile : undefined;
-        server = createMcpServer(userId, profile);
+        const clientType = detectClientType(req);
+        server = createMcpServer(userId, profile, clientType);
         transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: undefined,
         });
@@ -679,8 +725,9 @@ mcpRouter.get('/sse', oauthMiddleware, async (req, res) => {
     try {
         const userId = await userIdFromMcpRequest(req);
         const profile = typeof req.query.profile === 'string' ? req.query.profile : undefined;
+        const clientType = detectClientType(req);
         const transport = new SSEServerTransport("/api/mcp/messages", res);
-        const server = createMcpServer(userId, profile);
+        const server = createMcpServer(userId, profile, clientType);
         await server.connect(transport);
         transports.set(transport.sessionId, transport);
         
@@ -723,6 +770,19 @@ db.collectionGroup('trade_proposals')
                         status: 'executing',
                         executionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
                     });
+
+                    recordOrderEvent({
+                        userId,
+                        proposalId: doc.id,
+                        exchange: data.provider,
+                        symbol: data.symbol,
+                        side: data.side,
+                        orderType: data.orderType,
+                        quantity: data.quantity,
+                        price: data.price,
+                        eventType: 'submitted',
+                        status: 'executing',
+                    });
                 } catch (claimErr: any) {
                     logger.error(claimErr, "Failed to claim proposal, skipping:");
                     continue;
@@ -762,6 +822,19 @@ db.collectionGroup('trade_proposals')
                         executedAt: admin.firestore.FieldValue.serverTimestamp()
                     });
 
+                    recordOrderEvent({
+                        userId,
+                        proposalId: doc.id,
+                        exchange: data.provider,
+                        symbol: data.symbol,
+                        side: data.side,
+                        orderType: data.orderType,
+                        quantity: data.quantity,
+                        price: data.price,
+                        eventType: 'filled',
+                        status: 'executed',
+                    });
+
                     await db.collection(`users/${userId}/audit_logs`).add({
                         eventType: 'trade_executed',
                         source: 'execution_engine',
@@ -771,6 +844,20 @@ db.collectionGroup('trade_proposals')
 
                 } catch (err: any) {
                     logger.error(err, "Execution error:", err);
+
+                    recordOrderEvent({
+                        userId,
+                        proposalId: doc.id,
+                        exchange: data.provider,
+                        symbol: data.symbol,
+                        side: data.side,
+                        orderType: data.orderType,
+                        quantity: data.quantity,
+                        price: data.price,
+                        eventType: 'rejected',
+                        status: 'failed',
+                    });
+
                     await doc.ref.update({
                         status: 'failed',
                         executionResult: err.message,

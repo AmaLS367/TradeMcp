@@ -1,3 +1,5 @@
+import { recordProviderLatency } from './providerLatency.js';
+
 const COINGECKO_BASE_URLS = {
   demo: 'https://api.coingecko.com/api/v3',
   pro: 'https://pro-api.coingecko.com/api/v3',
@@ -102,24 +104,29 @@ function normalizePositiveInteger(value: unknown, fallback: number, max: number)
   return Math.min(numberValue, max);
 }
 
-async function fetchJson(url: URL, init?: RequestInit) {
-  const response = await fetch(url, init);
-  const text = await response.text();
-  let payload: unknown;
+async function fetchJson(url: URL, init?: RequestInit, providerName?: string) {
+  const latency = providerName ? recordProviderLatency(providerName, url.pathname) : null;
   try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    payload = { raw: text };
-  }
+    const response = await fetch(url, init);
+    const text = await response.text();
+    let payload: unknown;
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { raw: text };
+    }
 
-  if (!response.ok) {
-    const details = typeof payload === 'object' && payload && 'error' in payload
-      ? JSON.stringify((payload as { error: unknown }).error)
-      : JSON.stringify(payload);
-    throw new Error(`Provider request failed (${response.status}): ${details}`);
-  }
+    if (!response.ok) {
+      const details = typeof payload === 'object' && payload && 'error' in payload
+        ? JSON.stringify((payload as { error: unknown }).error)
+        : JSON.stringify(payload);
+      throw new Error(`Provider request failed (${response.status}): ${details}`);
+    }
 
-  return payload;
+    return payload;
+  } finally {
+    latency?.stop();
+  }
 }
 
 function coingeckoAuth(credentials: CoinGeckoCredentials) {
@@ -175,22 +182,22 @@ export function buildCoinGeckoTrendingRequest(credentials: CoinGeckoCredentials)
 
 export async function getCoinGeckoPrices(args: Record<string, unknown>, credentials: CoinGeckoCredentials) {
   const request = buildCoinGeckoPriceRequest(args, credentials);
-  return { provider: 'coingecko', data: await fetchJson(request.url, request.init) };
+  return { provider: 'coingecko', data: await fetchJson(request.url, request.init, 'coingecko') };
 }
 
 export async function getCoinGeckoMarkets(args: Record<string, unknown>, credentials: CoinGeckoCredentials) {
   const request = buildCoinGeckoMarketsRequest(args, credentials);
-  return { provider: 'coingecko', data: await fetchJson(request.url, request.init) };
+  return { provider: 'coingecko', data: await fetchJson(request.url, request.init, 'coingecko') };
 }
 
 export async function getCoinGeckoMarketChart(args: Record<string, unknown>, credentials: CoinGeckoCredentials) {
   const request = buildCoinGeckoMarketChartRequest(args, credentials);
-  return { provider: 'coingecko', data: await fetchJson(request.url, request.init) };
+  return { provider: 'coingecko', data: await fetchJson(request.url, request.init, 'coingecko') };
 }
 
 export async function getCoinGeckoTrending(credentials: CoinGeckoCredentials) {
   const request = buildCoinGeckoTrendingRequest(credentials);
-  return { provider: 'coingecko', data: await fetchJson(request.url, request.init) };
+  return { provider: 'coingecko', data: await fetchJson(request.url, request.init, 'coingecko') };
 }
 
 export function normalizeBinanceKlineInterval(interval: unknown) {
@@ -252,7 +259,7 @@ export function buildCryptoPanicNewsRequest(args: Record<string, unknown>, crede
 
 export async function getCryptoPanicNews(args: Record<string, unknown>, credentials: CryptoPanicCredentials) {
   const request = buildCryptoPanicNewsRequest(args, credentials);
-  const pages = await Promise.all(request.pages.map((url) => fetchJson(url)));
+  const pages = await Promise.all(request.pages.map((url) => fetchJson(url, undefined, 'cryptopanic')));
   return { provider: 'cryptopanic', pages };
 }
 
@@ -305,15 +312,15 @@ export function buildMessariTimeseriesRequest(args: Record<string, unknown>, cre
 
 export async function askMessariResearch(args: Record<string, unknown>, credentials: MessariCredentials) {
   const request = buildMessariResearchRequest(args, credentials);
-  return { provider: 'messari', data: await fetchJson(request.url, request.init) };
+  return { provider: 'messari', data: await fetchJson(request.url, request.init, 'messari') };
 }
 
 export async function getMessariTimeseriesCatalog(credentials: MessariCredentials) {
   const request = buildMessariTimeseriesCatalogRequest(credentials);
-  return { provider: 'messari', data: await fetchJson(request.url, request.init) };
+  return { provider: 'messari', data: await fetchJson(request.url, request.init, 'messari') };
 }
 
 export async function getMessariTimeseries(args: Record<string, unknown>, credentials: MessariCredentials) {
   const request = buildMessariTimeseriesRequest(args, credentials);
-  return { provider: 'messari', data: await fetchJson(request.url, request.init) };
+  return { provider: 'messari', data: await fetchJson(request.url, request.init, 'messari') };
 }

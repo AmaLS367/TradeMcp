@@ -99,6 +99,20 @@ service cloud.firestore {
         // Audit logs are read-only for the user. Written by Admin SDK.
         allow read: if isVerified() && request.auth.uid == userId;
       }
+
+      match /tool_calls/{doc} {
+        allow read, write: if isVerified() && request.auth.uid == userId;
+      }
+
+      match /order_events/{doc} {
+        allow read: if isVerified() && request.auth.uid == userId;
+        allow create: if isVerified();
+      }
+    }
+
+    match /alerts/{doc} {
+      allow read: if isVerified() && request.auth.uid == resource.data.userId;
+      allow write: if isVerified() && request.auth.uid == request.resource.data.userId;
     }
   }
 }

@@ -3,6 +3,9 @@ import { ListToolsRequestSchema, CallToolRequestSchema, type Tool } from "@model
 import admin from 'firebase-admin';
 import { logger } from './logger.js';
 import { getFxCandles, getFxQuote, getTechnicalIndicator, SUPPORTED_TWELVE_INDICATORS } from './marketData.js';
+import { withLatencyContext, getAccumulatedProviderLatency } from './providerLatency.js';
+import type { ClientType } from './observability.js';
+import { logToolCall, checkAlertConditions } from './observability.js';
 import {
     CRYPTO_ANALYSIS_MCP_TOOL_NAMES,
     askMessariResearch,
@@ -169,7 +172,27 @@ async function isMarketplaceServerEnabled(userId: string | null, serverId: McpMa
     return doc.exists && doc.data()?.isEnabled === true;
 }
 
-export function createMcpServer(userId: string | null, profile?: string) {
+const COINGECKO_TOOLS = new Set(['get_crypto_prices', 'get_crypto_markets', 'get_crypto_market_chart', 'get_crypto_trending']);
+const BINANCE_TOOLS = new Set(['get_binance_ticker', 'get_binance_order_book', 'get_binance_klines', 'get_binance_24h_stats']);
+const CRYPTOPANIC_TOOLS = new Set(['get_crypto_news']);
+const MESSARI_TOOLS = new Set(['ask_messari_research', 'get_messari_timeseries_catalog', 'get_messari_timeseries']);
+const MARKETDATA_TOOLS = new Set(['get_fx_quote', 'get_fx_candles', 'get_technical_indicator']);
+const NATIVE_TOOLS = new Set(['search', 'fetch', 'create_trade_proposal', 'list_exchange_methods', 'call_exchange_method', 'get_account_summary']);
+
+function extractProviderFromToolName(toolName: string): string {
+  const marketplaceTool = parseMarketplaceToolName(toolName);
+  if (marketplaceTool) return marketplaceTool.serverId;
+  if (COINGECKO_TOOLS.has(toolName)) return 'coingecko';
+  if (BINANCE_TOOLS.has(toolName)) return 'binance';
+  if (CRYPTOPANIC_TOOLS.has(toolName)) return 'cryptopanic';
+  if (MESSARI_TOOLS.has(toolName)) return 'messari';
+  if (MARKETDATA_TOOLS.has(toolName)) return 'marketdata';
+  if (NATIVE_TOOLS.has(toolName)) return 'native';
+  if (toolName === TRADEMCP_DOCS_TOOL_NAME || toolName === 'get_trademcp_research_guide') return 'native';
+  return 'unknown';
+}
+
+export function createMcpServer(userId: string | null, profile?: string, clientType: ClientType = 'unknown') {
     const server = new Server({
         name: "TradeMCPServer",
         version: "1.1.0"
@@ -518,9 +541,48 @@ export function createMcpServer(userId: string | null, profile?: string) {
         return { tools };
     });
 
-    server.setRequestHandler(CallToolRequestSchema, async (request) => (
-        withStructuredContent(await handleToolCall(request))
-    ));
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+        const startTime = Date.now();
+        const toolName = request.params.name;
+
+        return withLatencyContext(async () => {
+            let result: any;
+            let status: 'success' | 'error' = 'success';
+            let errorMessage: string | undefined;
+
+            try {
+                result = withStructuredContent(await handleToolCall(request));
+                return result;
+            } catch (err) {
+                status = 'error';
+                errorMessage = err instanceof Error ? err.message : String(err);
+                throw err;
+            } finally {
+                const latencyMs = Date.now() - startTime;
+                const provider = extractProviderFromToolName(toolName);
+
+                logToolCall({
+                    userId: userId || '',
+                    clientType,
+                    toolName,
+                    provider,
+                    latencyMs,
+                    status,
+                    errorMessage,
+                    profile: profile || 'safe_research',
+                });
+
+                checkAlertConditions(
+                    userId || '',
+                    toolName,
+                    provider,
+                    latencyMs,
+                    status,
+                    errorMessage,
+                );
+            }
+        });
+    });
 
     async function handleToolCall(request: any) {
         const { name, arguments: args } = request.params;
