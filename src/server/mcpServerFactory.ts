@@ -98,6 +98,17 @@ const LIST_EXCHANGE_METHODS_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
     additionalProperties: true,
 };
 
+const CALL_EXCHANGE_METHOD_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
+    type: "object",
+    properties: {
+        provider: { type: "string", description: "Exchange provider used for the call." },
+        method: { type: "string", description: "CCXT method that was called." },
+        result: { description: "Raw result returned by the CCXT method." },
+    },
+    required: ["provider", "method", "result"],
+    additionalProperties: true,
+};
+
 const TRADE_PROPOSAL_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
     type: "object",
     properties: {
@@ -112,6 +123,7 @@ function outputSchemaForTool(toolName: string): NonNullable<Tool['outputSchema']
     if (toolName === TRADEMCP_DOCS_TOOL_NAME) return RESEARCH_GUIDE_OUTPUT_SCHEMA;
     if (toolName === 'fetch') return TEXT_OUTPUT_SCHEMA;
     if (toolName === 'list_exchange_methods') return LIST_EXCHANGE_METHODS_OUTPUT_SCHEMA;
+    if (toolName === 'call_exchange_method') return CALL_EXCHANGE_METHOD_OUTPUT_SCHEMA;
     if (toolName === 'create_trade_proposal') return TRADE_PROPOSAL_OUTPUT_SCHEMA;
     return DATA_OUTPUT_SCHEMA;
 }
@@ -245,6 +257,8 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                             orderType: { type: "string", description: "Order type for the proposed order. Limit orders require price.", enum: ["market", "limit"] },
                             quantity: { type: "number", description: "Order quantity in base asset units, for example BTC amount for BTC/USDT." },
                             price: { type: "number", description: "Limit price in quote currency. Required only for limit orders." },
+                            stopLoss: { type: "number", description: "Optional stop-loss trigger price in quote currency. Use only when the user explicitly provides or asks for a stop-loss." },
+                            takeProfit: { type: "number", description: "Optional take-profit trigger price in quote currency. Use only when the user explicitly provides or asks for a take-profit." },
                             rationale: { type: "string", description: "Short user-facing reason for the proposal, including key market context or risk note." }
                         },
                         required: ["provider", "symbol", "side", "orderType", "quantity", "rationale"]
@@ -278,7 +292,9 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                             args: {
                                 type: "array",
                                 description: "Positional arguments passed directly to the CCXT method.",
-                                items: {}
+                                items: {
+                                    description: "Any JSON-serializable positional argument accepted by the selected CCXT method."
+                                }
                             },
                             params: {
                                 type: "object",
@@ -976,4 +992,3 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
 
     return server;
 }
-

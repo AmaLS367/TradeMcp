@@ -1202,6 +1202,21 @@ function ProposalsList({ user }: { user: User }) {
                                     {p.createdAt?.toDate ? p.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
                                   </p>
                                 </div>
+                                {(p.stopLoss || p.takeProfit) && (
+                                  <div className="p-4 bg-muted/30 rounded-2xl border border-border/10 col-span-2">
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Risk Levels</p>
+                                    <div className="grid grid-cols-2 gap-3 text-sm">
+                                      <div>
+                                        <span className="text-muted-foreground">Stop Loss</span>
+                                        <p className="font-bold text-destructive">{p.stopLoss ?? 'Not set'}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Take Profit</span>
+                                        <p className="font-bold text-green-500">{p.takeProfit ?? 'Not set'}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                             </div>
 
                             <div className="space-y-2">
