@@ -73,6 +73,65 @@ const emptyMetrics: MetricsData = {
   recentOrderEvents: [],
 };
 
+function numberOrZero(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function stringOrEmpty(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function normalizeMetrics(input: unknown): MetricsData {
+  const data = input && typeof input === 'object' ? input as Record<string, any> : {};
+  return {
+    totalCalls: numberOrZero(data.totalCalls),
+    successCount: numberOrZero(data.successCount),
+    errorCount: numberOrZero(data.errorCount),
+    averageLatency: numberOrZero(data.averageLatency ?? data.avgLatencyMs),
+    topTools: Array.isArray(data.topTools)
+      ? data.topTools.map((tool: Record<string, unknown>) => ({
+        toolName: stringOrEmpty(tool.toolName) || 'unknown',
+        calls: numberOrZero(tool.calls ?? tool.count),
+        avgLatency: numberOrZero(tool.avgLatency),
+        errorRate: numberOrZero(tool.errorRate),
+        lastCalled: stringOrEmpty(tool.lastCalled),
+      }))
+      : [],
+    topProviders: Array.isArray(data.topProviders)
+      ? data.topProviders.map((provider: Record<string, unknown>) => ({
+        provider: stringOrEmpty(provider.provider) || 'native',
+        avgLatency: numberOrZero(provider.avgLatency),
+        totalCalls: numberOrZero(provider.totalCalls ?? provider.count),
+      }))
+      : [],
+    dailyBreakdown: Array.isArray(data.dailyBreakdown)
+      ? data.dailyBreakdown.map((day: Record<string, unknown>) => ({
+        date: stringOrEmpty(day.date),
+        calls: numberOrZero(day.calls ?? day.count),
+        errors: numberOrZero(day.errors),
+      }))
+      : [],
+    clientDistribution: Array.isArray(data.clientDistribution)
+      ? data.clientDistribution.map((client: Record<string, unknown>) => ({
+        clientType: stringOrEmpty(client.clientType) || 'unknown',
+        calls: numberOrZero(client.calls ?? client.count),
+      }))
+      : [],
+    recentOrderEvents: Array.isArray(data.recentOrderEvents)
+      ? data.recentOrderEvents.map((event: Record<string, unknown>) => ({
+        id: stringOrEmpty(event.id),
+        symbol: stringOrEmpty(event.symbol) || 'unknown',
+        side: stringOrEmpty(event.side) || 'unknown',
+        eventType: stringOrEmpty(event.eventType) || 'unknown',
+        status: stringOrEmpty(event.status) || 'unknown',
+        quantity: numberOrZero(event.quantity),
+        price: typeof event.price === 'number' && Number.isFinite(event.price) ? event.price : undefined,
+        timestamp: stringOrEmpty(event.timestamp),
+      }))
+      : [],
+  };
+}
+
 function SummaryCard({
   icon: Icon,
   label,
@@ -160,7 +219,7 @@ export default function Observability({ user }: { user: User }) {
       });
       if (!res.ok) throw new Error('Failed to load metrics');
       const data = await res.json();
-      setMetrics(data);
+      setMetrics(normalizeMetrics(data));
     } catch (err) {
       console.error('[Observability] Failed to load metrics:', err);
     } finally {

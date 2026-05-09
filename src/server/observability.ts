@@ -99,12 +99,47 @@ export type ToolMetrics = {
   totalCalls: number;
   successCount: number;
   errorCount: number;
-  avgLatencyMs: number;
-  topTools: { toolName: string; count: number }[];
-  topProviders: { provider: string; count: number }[];
-  dailyBreakdown: { date: string; count: number }[];
-  clientDistribution: { clientType: string; count: number }[];
+  averageLatency: number;
+  topTools: { toolName: string; calls: number; avgLatency: number; errorRate: number; lastCalled: string }[];
+  topProviders: { provider: string; avgLatency: number; totalCalls: number }[];
+  dailyBreakdown: { date: string; calls: number; errors: number }[];
+  clientDistribution: { clientType: string; calls: number }[];
+  recentOrderEvents: {
+    id: string;
+    symbol: string;
+    side: string;
+    eventType: string;
+    status: string;
+    quantity: number;
+    price?: number;
+    timestamp: string;
+  }[];
 };
+
+type ToolAgg = {
+  calls: number;
+  errors: number;
+  latencyMs: number;
+  lastCalled: string;
+};
+
+type ProviderAgg = {
+  totalCalls: number;
+  latencyMs: number;
+};
+
+type DailyAgg = {
+  calls: number;
+  errors: number;
+};
+
+function finiteNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function stringValue(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
 
 export async function getToolMetrics(userId: string, since?: Date): Promise<ToolMetrics> {
   let query: FirebaseFirestore.Query = db.collection('tool_calls')
@@ -123,58 +158,115 @@ export async function getToolMetrics(userId: string, since?: Date): Promise<Tool
   const successCount = calls.filter((c) => c.status === 'success').length;
   const errorCount = totalCalls - successCount;
   const totalLatency = calls.reduce((sum, c) => sum + (typeof c.latencyMs === 'number' ? c.latencyMs : 0), 0);
-  const avgLatencyMs = totalCalls > 0 ? Math.round(totalLatency / totalCalls) : 0;
+  const averageLatency = totalCalls > 0 ? Math.round(totalLatency / totalCalls) : 0;
 
-  // Top tools
-  const toolCounts = new Map<string, number>();
-  const providerCounts = new Map<string, number>();
-  const dailyCounts = new Map<string, number>();
+  const toolStats = new Map<string, ToolAgg>();
+  const providerStats = new Map<string, ProviderAgg>();
+  const dailyStats = new Map<string, DailyAgg>();
   const clientCounts = new Map<string, number>();
 
   for (const c of calls) {
     const toolName: string = c.toolName || 'unknown';
-    toolCounts.set(toolName, (toolCounts.get(toolName) || 0) + 1);
+    const latencyMs = finiteNumber(c.latencyMs);
+    const isError = c.status === 'error';
+    const timestamp = stringValue(c.timestamp);
+
+    const tool = toolStats.get(toolName) || { calls: 0, errors: 0, latencyMs: 0, lastCalled: '' };
+    tool.calls += 1;
+    tool.errors += isError ? 1 : 0;
+    tool.latencyMs += latencyMs;
+    if (timestamp && (!tool.lastCalled || timestamp > tool.lastCalled)) {
+      tool.lastCalled = timestamp;
+    }
+    toolStats.set(toolName, tool);
 
     const provider: string = c.provider || 'native';
-    providerCounts.set(provider, (providerCounts.get(provider) || 0) + 1);
+    const providerStat = providerStats.get(provider) || { totalCalls: 0, latencyMs: 0 };
+    providerStat.totalCalls += 1;
+    providerStat.latencyMs += latencyMs;
+    providerStats.set(provider, providerStat);
 
-    const date = (c.timestamp as string || '').slice(0, 10);
+    const date = timestamp.slice(0, 10);
     if (date) {
-      dailyCounts.set(date, (dailyCounts.get(date) || 0) + 1);
+      const daily = dailyStats.get(date) || { calls: 0, errors: 0 };
+      daily.calls += 1;
+      daily.errors += isError ? 1 : 0;
+      dailyStats.set(date, daily);
     }
 
     const clientType: string = c.clientType || 'unknown';
     clientCounts.set(clientType, (clientCounts.get(clientType) || 0) + 1);
   }
 
-  const topTools = [...toolCounts.entries()]
-    .map(([toolName, count]) => ({ toolName, count }))
-    .sort((a, b) => b.count - a.count)
+  const topTools = [...toolStats.entries()]
+    .map(([toolName, stat]) => ({
+      toolName,
+      calls: stat.calls,
+      avgLatency: stat.calls > 0 ? Math.round(stat.latencyMs / stat.calls) : 0,
+      errorRate: stat.calls > 0 ? Math.round((stat.errors / stat.calls) * 1000) / 10 : 0,
+      lastCalled: stat.lastCalled,
+    }))
+    .sort((a, b) => b.calls - a.calls)
     .slice(0, 10);
 
-  const topProviders = [...providerCounts.entries()]
-    .map(([provider, count]) => ({ provider, count }))
-    .sort((a, b) => b.count - a.count)
+  const topProviders = [...providerStats.entries()]
+    .map(([provider, stat]) => ({
+      provider,
+      avgLatency: stat.totalCalls > 0 ? Math.round(stat.latencyMs / stat.totalCalls) : 0,
+      totalCalls: stat.totalCalls,
+    }))
+    .sort((a, b) => b.totalCalls - a.totalCalls)
     .slice(0, 10);
 
-  const dailyBreakdown = [...dailyCounts.entries()]
-    .map(([date, count]) => ({ date, count }))
+  const dailyBreakdown = [...dailyStats.entries()]
+    .map(([date, stat]) => ({ date, calls: stat.calls, errors: stat.errors }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const clientDistribution = [...clientCounts.entries()]
-    .map(([clientType, count]) => ({ clientType, count }))
-    .sort((a, b) => b.count - a.count);
+    .map(([clientType, calls]) => ({ clientType, calls }))
+    .sort((a, b) => b.calls - a.calls);
+
+  const recentOrderEvents = await getRecentOrderEvents(userId);
 
   return {
     totalCalls,
     successCount,
     errorCount,
-    avgLatencyMs,
+    averageLatency,
     topTools,
     topProviders,
     dailyBreakdown,
     clientDistribution,
+    recentOrderEvents,
   };
+}
+
+async function getRecentOrderEvents(userId: string): Promise<ToolMetrics['recentOrderEvents']> {
+  try {
+    const snapshot = await db.collection('order_events')
+      .where('userId', '==', userId)
+      .orderBy('timestamp', 'desc')
+      .limit(20)
+      .get();
+
+    return snapshot.docs.map((doc) => {
+      const data = doc.data();
+      const price = finiteNumber(data.price);
+      return {
+        id: doc.id,
+        symbol: stringValue(data.symbol, 'unknown'),
+        side: stringValue(data.side, 'unknown'),
+        eventType: stringValue(data.eventType, 'unknown'),
+        status: stringValue(data.status, 'unknown'),
+        quantity: finiteNumber(data.quantity),
+        ...(price > 0 ? { price } : {}),
+        timestamp: stringValue(data.timestamp),
+      };
+    });
+  } catch (err) {
+    logger.warn({ err, userId }, 'Failed to fetch recent order events');
+    return [];
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -384,4 +476,3 @@ export function recordOrderEvent(params: OrderEventParams) {
       );
     });
 }
-
