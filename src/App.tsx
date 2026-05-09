@@ -499,8 +499,12 @@ function MarketDataProviders({ user }: { user: User }) {
   const testProvider = async (provider: string) => {
     setBusyProvider(provider);
     try {
-      await providerRequest(provider, 'POST');
-      toast.success('Provider key verified');
+      const data = await providerRequest(provider, 'POST');
+      if (data.warning) {
+        toast.warning(data.warning);
+      } else {
+        toast.success('Provider key verified');
+      }
     } catch (err: any) {
       handleUIError(err, 'Validate Data Provider');
     } finally {

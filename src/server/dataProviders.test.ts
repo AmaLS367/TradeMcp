@@ -3,6 +3,7 @@ import {
   DATA_PROVIDER_DEFINITIONS,
   buildDataProviderDocument,
   decryptDataProviderDocument,
+  getDataProviderValidationMode,
   toPublicDataProvider,
 } from './dataProviders';
 
@@ -18,6 +19,11 @@ describe('data provider credential helpers', () => {
       'cryptopanic',
       'messari',
     ]);
+  });
+
+  it('uses key-only validation for Messari because live endpoints can be Enterprise gated', () => {
+    expect(getDataProviderValidationMode('messari')).toBe('key_only');
+    expect(getDataProviderValidationMode('coingecko')).toBe('live_probe');
   });
 
   it('encrypts secret fields and keeps provider config non-secret', () => {

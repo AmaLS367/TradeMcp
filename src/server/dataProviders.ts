@@ -68,6 +68,10 @@ export function isDataProviderId(provider: unknown): provider is DataProviderId 
   return typeof provider === 'string' && provider in DATA_PROVIDER_DEFINITIONS;
 }
 
+export function getDataProviderValidationMode(provider: DataProviderId) {
+  return provider === 'messari' ? 'key_only' : 'live_probe';
+}
+
 function getStringField(input: Record<string, unknown>, field: string) {
   const value = input[field];
   return typeof value === 'string' ? value.trim() : '';

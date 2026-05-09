@@ -36,6 +36,7 @@ import {
 import {
     buildDataProviderDocument,
     decryptDataProviderDocument,
+    getDataProviderValidationMode,
     isDataProviderId,
     toPublicDataProvider,
     type DataProviderId,
@@ -1420,6 +1421,11 @@ export async function verifyAuth(req: express.Request, res: express.Response, ne
 async function validateDataProviderInput(provider: DataProviderId, input: Record<string, unknown>, existing?: StoredDataProviderDocument) {
     const doc = buildDataProviderDocument(provider, { ...input, isActive: true }, encrypt, existing);
     const decrypted = decryptDataProviderDocument(doc, decrypt);
+    if (getDataProviderValidationMode(provider) === 'key_only') {
+        return {
+            warning: 'Messari API permissions are plan-specific, so the key was accepted without calling Enterprise-gated endpoints.',
+        };
+    }
 
     if (provider === 'oanda') {
         await getFxQuote({ symbol: 'EUR/USD', provider: 'oanda' }, {
@@ -1446,9 +1452,8 @@ async function validateDataProviderInput(provider: DataProviderId, input: Record
             apiKey: decrypted.apiKey || '',
             apiPlan: decrypted.apiPlan || 'free',
         });
-    } else if (provider === 'messari') {
-        await getMessariTimeseriesCatalog({ apiKey: decrypted.apiKey || '' });
     }
+    return {};
 }
 
 mcpRouter.get('/data-providers', verifyAuth, async (req, res) => {
@@ -1503,11 +1508,11 @@ mcpRouter.post('/data-providers/:provider/validate', verifyAuth, async (req, res
         const docRef = db.doc(`users/${userId}/data_provider_connections/${provider}`);
         const existingSnap = await docRef.get();
         const existing = existingSnap.exists ? existingSnap.data() as StoredDataProviderDocument : undefined;
-        await validateDataProviderInput(provider, req.body || {}, existing);
+        const validationResult = await validateDataProviderInput(provider, req.body || {}, existing);
         if (existing) {
             await docRef.update({ lastValidatedAt: admin.firestore.FieldValue.serverTimestamp() });
         }
-        res.json({ valid: true });
+        res.json({ valid: true, ...validationResult });
     } catch (err: any) {
         res.status(400).json({ valid: false, error: err.message });
     }
