@@ -33,7 +33,8 @@ import {
   ChevronRight,
   Database,
   KeyRound,
-  RefreshCw
+  RefreshCw,
+  Webhook
 } from 'lucide-react';
 
 enum OperationType {
@@ -160,6 +161,12 @@ function AuthGuard() {
             label="Data Providers"
             onClick={() => setActiveTab('data-providers')}
           />
+          <NavItem
+            active={activeTab === 'mcp-market'}
+            icon={Webhook}
+            label="MCP Market"
+            onClick={() => setActiveTab('mcp-market')}
+          />
           <NavItem 
             active={activeTab === 'settings'} 
             icon={Settings} 
@@ -211,7 +218,7 @@ function AuthGuard() {
         {/* Mobile Nav */}
         <div className="lg:hidden px-6 py-2 border-b border-border/40 bg-muted/30">
            <div className="flex gap-2 overflow-x-auto no-scrollbar py-2">
-              {['proposals', 'connections', 'data-providers', 'settings'].map(tab => (
+              {['proposals', 'connections', 'data-providers', 'mcp-market', 'settings'].map(tab => (
                 <Button 
                   key={tab}
                   variant={activeTab === tab ? 'default' : 'ghost'}
@@ -237,6 +244,7 @@ function AuthGuard() {
               {activeTab === 'proposals' && <ProposalsList user={user} />}
               {activeTab === 'connections' && <ExchangeConnections user={user} />}
               {activeTab === 'data-providers' && <MarketDataProviders user={user} />}
+              {activeTab === 'mcp-market' && <McpMarket user={user} />}
               {activeTab === 'settings' && <MCPSettings />}
             </motion.div>
           </AnimatePresence>
@@ -412,6 +420,176 @@ const DATA_PROVIDER_CONFIGS = [
 
 type DataProviderConfig = typeof DATA_PROVIDER_CONFIGS[number];
 type ProviderFormState = Record<string, any>;
+
+function McpMarket({ user }: { user: User }) {
+  const [servers, setServers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyServer, setBusyServer] = useState<string | null>(null);
+
+  const loadServers = async () => {
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/mcp/mcp-servers', {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to load MCP servers');
+      setServers(data.servers || []);
+    } catch (err: any) {
+      handleUIError(err, 'Load MCP Market');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadServers();
+  }, [user.uid]);
+
+  const serverRequest = async (serverId: string, method: 'PUT' | 'POST' | 'DELETE') => {
+    const idToken = await user.getIdToken();
+    const url = method === 'POST'
+      ? `/api/mcp/mcp-servers/${serverId}/test`
+      : `/api/mcp/mcp-servers/${serverId}`;
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: method === 'PUT' ? JSON.stringify({ isEnabled: true }) : undefined,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || data.message || 'MCP server request failed');
+    return data;
+  };
+
+  const connectServer = async (serverId: string) => {
+    setBusyServer(serverId);
+    try {
+      await serverRequest(serverId, 'PUT');
+      await loadServers();
+      toast.success('MCP server connected');
+    } catch (err: any) {
+      handleUIError(err, 'Connect MCP Server');
+    } finally {
+      setBusyServer(null);
+    }
+  };
+
+  const disconnectServer = async (serverId: string) => {
+    setBusyServer(serverId);
+    try {
+      await serverRequest(serverId, 'DELETE');
+      await loadServers();
+      toast.success('MCP server disconnected');
+    } catch (err: any) {
+      handleUIError(err, 'Disconnect MCP Server');
+    } finally {
+      setBusyServer(null);
+    }
+  };
+
+  const testServer = async (serverId: string) => {
+    setBusyServer(serverId);
+    try {
+      const data = await serverRequest(serverId, 'POST');
+      await loadServers();
+      toast.success(`MCP server responded with ${data.toolCount || 0} tools`);
+    } catch (err: any) {
+      await loadServers();
+      handleUIError(err, 'Test MCP Server');
+    } finally {
+      setBusyServer(null);
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight mb-2">MCP Market</h2>
+          <p className="text-muted-foreground">Public MCP servers routed through your Trade MCP endpoint</p>
+        </div>
+        <Button variant="secondary" className="rounded-xl gap-2" onClick={loadServers} disabled={loading}>
+          <RefreshCw size={16} /> Refresh
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        {loading ? (
+          [1, 2].map((item) => <div key={item} className="h-64 bg-muted/40 animate-pulse rounded-2xl" />)
+        ) : (
+          servers.map((server) => {
+            const busy = busyServer === server.id;
+            return (
+              <Card key={server.id} className={`glass-card border-none ${!server.isEnabled ? 'opacity-90' : ''}`}>
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500">
+                        <Webhook size={20} />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{server.name}</CardTitle>
+                        <CardDescription>{server.category?.replaceAll('_', ' ') || 'market data'}</CardDescription>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className={server.isEnabled ? 'text-green-500 border-green-500/30' : 'text-muted-foreground'}>
+                      {server.isEnabled ? 'Connected' : 'Disconnected'}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground leading-relaxed">{server.description}</p>
+                  <div className="space-y-3 rounded-xl border border-border/40 bg-background/40 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Auth</span>
+                      <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-none">No API key required</Badge>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Endpoint</span>
+                      <p className="text-xs font-mono break-all text-muted-foreground">{server.endpoint}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tools</p>
+                        <p className="font-semibold">{typeof server.toolCount === 'number' ? server.toolCount : 'Not tested'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Transport</p>
+                        <p className="font-semibold">{server.transport?.replaceAll('_', ' ')}</p>
+                      </div>
+                    </div>
+                    {server.lastError && (
+                      <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">
+                        {server.lastError}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {server.isEnabled ? (
+                      <Button variant="secondary" className="rounded-xl gap-2" onClick={() => disconnectServer(server.id)} disabled={busy}>
+                        <Power size={16} /> Disconnect
+                      </Button>
+                    ) : (
+                      <Button className="rounded-xl gap-2" onClick={() => connectServer(server.id)} disabled={busy}>
+                        <Check size={16} /> Connect
+                      </Button>
+                    )}
+                    <Button variant="secondary" className="rounded-xl gap-2" onClick={() => testServer(server.id)} disabled={busy}>
+                      <CheckCircle2 size={16} /> Test
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
 
 function MarketDataProviders({ user }: { user: User }) {
   const [providers, setProviders] = useState<Record<string, any>>({});

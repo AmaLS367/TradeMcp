@@ -54,6 +54,8 @@ VITE_PUBLIC_BASE_URL=https://vmi3245942.contaboserver.net/api/mcp/
 
 Market data keys are BYOK credentials. Add OANDA, Twelve Data, CoinGecko, CryptoPanic, and Messari keys in the dashboard under `Market Data Providers`; they are encrypted per user and are not read from server environment variables.
 
+Public MCP servers are managed separately in the dashboard under `MCP Market`. These no-auth servers are enabled per user and proxied through the same OAuth-protected Trade MCP endpoint.
+
 ## Run
 
 ```bash
@@ -152,6 +154,15 @@ Returns the Messari timeseries dataset catalog for the authenticated user's Mess
 
 Returns Messari timeseries data for an asset, market, exchange, or network when the user's Messari plan allows it.
 
+Marketplace MCP tools
+
+Tools from enabled MCP Market servers are listed dynamically with collision-safe prefixes:
+
+- `crypto_com__<tool>` from Crypto.com MCP
+- `coingecko_public__<tool>` from CoinGecko Public MCP
+
+Enable these servers in the dashboard under `MCP Market`; no API key is required for the initial Crypto.com and CoinGecko public MCP servers.
+
 ## Market Data Providers
 
 Dashboard provider keys are stored at `users/{userId}/data_provider_connections/{provider}` and accessed only through backend API routes under `/api/mcp/data-providers/*`.
@@ -165,3 +176,14 @@ Supported providers:
 - Messari: `apiKey`
 
 CoinGecko and Messari hosted MCP options were reviewed, but Trade MCP uses dashboard-owned BYOK credentials so all analytics tools share one OAuth-protected MCP endpoint.
+
+## MCP Market
+
+Dashboard MCP server connections are stored at `users/{userId}/mcp_server_connections/{serverId}` and accessed only through backend API routes under `/api/mcp/mcp-servers/*`.
+
+Supported public no-auth MCP servers:
+
+- Crypto.com: `https://mcp.crypto.com/market-data/mcp`
+- CoinGecko Public MCP: `https://mcp.api.coingecko.com/mcp`
+
+Marketplace tools are proxied through the existing `/api/mcp/` endpoint only after the user connects the server in the dashboard.

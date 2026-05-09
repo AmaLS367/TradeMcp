@@ -5,7 +5,7 @@ import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middlew
 import type { OAuthClientInformationFull, OAuthClientMetadata, OAuthTokens, OAuthTokenRevocationRequest } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { AuthorizationParams, OAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { ListToolsRequestSchema, CallToolRequestSchema, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import express from "express";
 import admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -43,6 +43,19 @@ import {
     type DecryptedDataProvider,
     type StoredDataProviderDocument,
 } from './dataProviders.js';
+import {
+    callMarketplaceTool,
+    isMcpMarketplaceServerId,
+    listMcpMarketplaceCatalog,
+    listMarketplaceServerTools,
+    listMarketplaceToolsForServerIds,
+    marketplaceErrorMessage,
+    parseMarketplaceToolName,
+    toPublicMcpServerConnection,
+    trimMarketplaceToolResult,
+    type McpMarketplaceServerId,
+    type StoredMcpServerConnection,
+} from './mcpMarketplace.js';
 
 // --- Encryption Helpers ---
 export const ALGORITHM = 'aes-256-gcm';
@@ -591,6 +604,29 @@ async function getMessariCredentials(userId: string | null): Promise<MessariCred
     return { apiKey: provider.apiKey || '' };
 }
 
+async function getEnabledMarketplaceServerIds(userId: string | null): Promise<McpMarketplaceServerId[]> {
+    if (!userId) {
+        return [];
+    }
+
+    const snap = await db.collection(`users/${userId}/mcp_server_connections`)
+        .where('isEnabled', '==', true)
+        .get();
+
+    return snap.docs
+        .map((doc) => doc.id)
+        .filter(isMcpMarketplaceServerId);
+}
+
+async function isMarketplaceServerEnabled(userId: string | null, serverId: McpMarketplaceServerId) {
+    if (!userId) {
+        return false;
+    }
+
+    const doc = await db.doc(`users/${userId}/mcp_server_connections/${serverId}`).get();
+    return doc.exists && doc.data()?.isEnabled === true;
+}
+
 function assertMethodCallable(exchange: any, method: unknown): asserts method is string {
     if (typeof method !== 'string' || !method.trim()) {
         throw new Error('method must be a non-empty string');
@@ -613,8 +649,7 @@ function createMcpServer(userId: string | null) {
     });
 
     server.setRequestHandler(ListToolsRequestSchema, async () => {
-        return {
-            tools: [
+        const tools: Tool[] = [
                 {
                     name: "get_account_summary",
                     description: "Use this when the user asks for crypto exchange account balances or a portfolio summary. Returns balances from the user's active Binance/Bybit connections.",
@@ -889,12 +924,49 @@ function createMcpServer(userId: string | null) {
                     },
                     annotations: { readOnlyHint: true },
                 }
-            ]
-        };
+            ];
+
+        try {
+            tools.push(...await listMarketplaceToolsForServerIds(await getEnabledMarketplaceServerIds(userId)));
+        } catch (err) {
+            logger.warn({ err, userId }, 'Failed to list enabled marketplace MCP tools');
+        }
+
+        return { tools };
     });
 
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { name, arguments: args } = request.params;
+        const marketplaceTool = parseMarketplaceToolName(name);
+
+        if (marketplaceTool) {
+            if (!await isMarketplaceServerEnabled(userId, marketplaceTool.serverId)) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: `MCP marketplace server "${marketplaceTool.serverId}" is not connected. Enable it in the MCP Market panel first.`
+                    }],
+                    isError: true,
+                };
+            }
+
+            try {
+                const result = await callMarketplaceTool(
+                    marketplaceTool.serverId,
+                    marketplaceTool.upstreamToolName,
+                    (args || {}) as Record<string, unknown>,
+                );
+                return trimMarketplaceToolResult(result, MAX_TOOL_RESPONSE_CHARS) as any;
+            } catch (err) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: marketplaceErrorMessage(err),
+                    }],
+                    isError: true,
+                };
+            }
+        }
 
         if (name === "get_account_summary") {
             if (!userId) {
@@ -1417,6 +1489,122 @@ export async function verifyAuth(req: express.Request, res: express.Response, ne
 }
 
 // --- API Endpoints ---
+
+mcpRouter.get('/mcp-servers/catalog', verifyAuth, async (_req, res) => {
+    res.json({ servers: listMcpMarketplaceCatalog() });
+});
+
+mcpRouter.get('/mcp-servers', verifyAuth, async (req, res) => {
+    const userId = (req as any).userId;
+    try {
+        const snap = await db.collection(`users/${userId}/mcp_server_connections`).get();
+        const stored = new Map<string, StoredMcpServerConnection>();
+        for (const doc of snap.docs) {
+            if (isMcpMarketplaceServerId(doc.id)) {
+                stored.set(doc.id, doc.data() as StoredMcpServerConnection);
+            }
+        }
+
+        res.json({
+            servers: listMcpMarketplaceCatalog().map((server) => (
+                toPublicMcpServerConnection(server.id, stored.get(server.id))
+            )),
+        });
+    } catch (err: any) {
+        logger.error(err, 'Error listing MCP marketplace servers:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+mcpRouter.put('/mcp-servers/:serverId', verifyAuth, async (req, res) => {
+    const serverId = req.params.serverId;
+    const userId = (req as any).userId;
+    if (!isMcpMarketplaceServerId(serverId)) {
+        return res.status(400).json({ error: 'unsupported_mcp_server' });
+    }
+
+    try {
+        const docRef = db.doc(`users/${userId}/mcp_server_connections/${serverId}`);
+        const existingSnap = await docRef.get();
+        const existing = existingSnap.exists ? existingSnap.data() as StoredMcpServerConnection : undefined;
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const isEnabled = typeof req.body?.isEnabled === 'boolean' ? req.body.isEnabled : true;
+        await docRef.set(sanitizeFirestoreData({
+            serverId,
+            isEnabled,
+            connectedAt: existing?.connectedAt || now,
+            updatedAt: now,
+            lastCheckedAt: existing?.lastCheckedAt,
+            lastError: existing?.lastError ?? null,
+            toolCount: existing?.toolCount,
+        }), { merge: true });
+        const saved = await docRef.get();
+        res.json({ success: true, server: toPublicMcpServerConnection(serverId, saved.data() as StoredMcpServerConnection) });
+    } catch (err: any) {
+        logger.error(err, 'Error saving MCP marketplace server:', err);
+        res.status(400).json({ error: err.message });
+    }
+});
+
+mcpRouter.post('/mcp-servers/:serverId/test', verifyAuth, async (req, res) => {
+    const serverId = req.params.serverId;
+    const userId = (req as any).userId;
+    if (!isMcpMarketplaceServerId(serverId)) {
+        return res.status(400).json({ error: 'unsupported_mcp_server' });
+    }
+
+    const docRef = db.doc(`users/${userId}/mcp_server_connections/${serverId}`);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    try {
+        const result = await listMarketplaceServerTools(serverId);
+        const existingSnap = await docRef.get();
+        const existing = existingSnap.exists ? existingSnap.data() as StoredMcpServerConnection : undefined;
+        await docRef.set(sanitizeFirestoreData({
+            serverId,
+            isEnabled: existing?.isEnabled === true,
+            connectedAt: existing?.connectedAt,
+            updatedAt: existing?.updatedAt || now,
+            lastCheckedAt: now,
+            lastError: null,
+            toolCount: result.tools.length,
+        }), { merge: true });
+        const saved = await docRef.get();
+        res.json({
+            valid: true,
+            toolCount: result.tools.length,
+            server: toPublicMcpServerConnection(serverId, saved.data() as StoredMcpServerConnection),
+        });
+    } catch (err: any) {
+        const error = marketplaceErrorMessage(err);
+        const existingSnap = await docRef.get();
+        const existing = existingSnap.exists ? existingSnap.data() as StoredMcpServerConnection : undefined;
+        await docRef.set(sanitizeFirestoreData({
+            serverId,
+            isEnabled: existing?.isEnabled === true,
+            connectedAt: existing?.connectedAt,
+            updatedAt: existing?.updatedAt || now,
+            lastCheckedAt: now,
+            lastError: error,
+            toolCount: existing?.toolCount,
+        }), { merge: true });
+        res.status(400).json({ valid: false, error });
+    }
+});
+
+mcpRouter.delete('/mcp-servers/:serverId', verifyAuth, async (req, res) => {
+    const serverId = req.params.serverId;
+    const userId = (req as any).userId;
+    if (!isMcpMarketplaceServerId(serverId)) {
+        return res.status(400).json({ error: 'unsupported_mcp_server' });
+    }
+
+    try {
+        await db.doc(`users/${userId}/mcp_server_connections/${serverId}`).delete();
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 async function validateDataProviderInput(provider: DataProviderId, input: Record<string, unknown>, existing?: StoredDataProviderDocument) {
     const doc = buildDataProviderDocument(provider, { ...input, isActive: true }, encrypt, existing);
