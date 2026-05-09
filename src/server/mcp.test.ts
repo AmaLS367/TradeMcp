@@ -3,6 +3,7 @@ import {
   decrypt,
   encrypt,
   getTradeMcpResearchGuide,
+  OBSERVABILITY_MCP_TOOL_NAMES,
   RAW_EXCHANGE_MCP_TOOL_NAMES,
   sanitizeFirestoreData,
   shouldIncludeTool,
@@ -89,6 +90,14 @@ describe('MCP profile tool visibility', () => {
   it('exposes TradeMCP research guide in safe research profiles', () => {
     expect(shouldIncludeTool(TRADEMCP_DOCS_TOOL_NAME, 'safe_research')).toBe(true);
     expect(shouldIncludeTool(TRADEMCP_DOCS_TOOL_NAME, 'trading_review')).toBe(true);
+  });
+
+  it('exposes observability tools to trading review and full access profiles only', () => {
+    for (const toolName of OBSERVABILITY_MCP_TOOL_NAMES) {
+      expect(shouldIncludeTool(toolName, 'safe_research')).toBe(false);
+      expect(shouldIncludeTool(toolName, 'trading_review')).toBe(true);
+      expect(shouldIncludeTool(toolName, 'full_access')).toBe(true);
+    }
   });
 });
 

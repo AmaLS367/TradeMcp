@@ -5,7 +5,7 @@ import { logger } from './logger.js';
 import { getFxCandles, getFxQuote, getTechnicalIndicator, SUPPORTED_TWELVE_INDICATORS } from './marketData.js';
 import { withLatencyContext, getAccumulatedProviderLatency } from './providerLatency.js';
 import type { ClientType } from './observability.js';
-import { logToolCall, checkAlertConditions } from './observability.js';
+import { logToolCall, checkAlertConditions, getToolMetrics, getActiveAlerts } from './observability.js';
 import {
     CRYPTO_ANALYSIS_MCP_TOOL_NAMES,
     askMessariResearch,
@@ -32,7 +32,7 @@ import {
 } from './mcpMarketplace.js';
 import { db } from './mcpFirebase.js';
 import { TRADEMCP_DOCS_TOOL_NAME, getTradeMcpResearchGuide } from './tradeMcpResearchGuide.js';
-import { MARKET_DATA_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, isMarketplaceToolAllowed, shouldIncludeTool } from './mcpToolPolicy.js';
+import { MARKET_DATA_MCP_TOOL_NAMES, OBSERVABILITY_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, isMarketplaceToolAllowed, shouldIncludeTool } from './mcpToolPolicy.js';
 import {
     assertMethodCallable,
     collectExchangeMethods,
@@ -109,6 +109,32 @@ const CALL_EXCHANGE_METHOD_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
     additionalProperties: true,
 };
 
+const OBSERVABILITY_METRICS_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
+    type: "object",
+    properties: {
+        totalCalls: { type: "number", description: "Total MCP tool calls in the selected window." },
+        successCount: { type: "number", description: "Successful MCP tool calls." },
+        errorCount: { type: "number", description: "Failed MCP tool calls." },
+        averageLatency: { type: "number", description: "Average tool call latency in milliseconds." },
+        topTools: { type: "array", description: "Most-used tools with call count, average latency, error rate, and last call timestamp." },
+        topProviders: { type: "array", description: "Provider-level latency and call counts." },
+        dailyBreakdown: { type: "array", description: "Daily call and error counts." },
+        clientDistribution: { type: "array", description: "Tool call distribution by MCP client type." },
+        recentOrderEvents: { type: "array", description: "Recent order lifecycle events recorded by TradeMCP." },
+    },
+    required: ["totalCalls", "successCount", "errorCount", "averageLatency", "topTools", "topProviders", "dailyBreakdown", "clientDistribution", "recentOrderEvents"],
+    additionalProperties: false,
+};
+
+const OBSERVABILITY_ALERTS_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
+    type: "object",
+    properties: {
+        alerts: { type: "array", description: "Active unresolved observability alerts." },
+    },
+    required: ["alerts"],
+    additionalProperties: false,
+};
+
 const TRADE_PROPOSAL_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
     type: "object",
     properties: {
@@ -124,6 +150,8 @@ function outputSchemaForTool(toolName: string): NonNullable<Tool['outputSchema']
     if (toolName === 'fetch') return TEXT_OUTPUT_SCHEMA;
     if (toolName === 'list_exchange_methods') return LIST_EXCHANGE_METHODS_OUTPUT_SCHEMA;
     if (toolName === 'call_exchange_method') return CALL_EXCHANGE_METHOD_OUTPUT_SCHEMA;
+    if (toolName === OBSERVABILITY_MCP_TOOL_NAMES[0]) return OBSERVABILITY_METRICS_OUTPUT_SCHEMA;
+    if (toolName === OBSERVABILITY_MCP_TOOL_NAMES[1]) return OBSERVABILITY_ALERTS_OUTPUT_SCHEMA;
     if (toolName === 'create_trade_proposal') return TRADE_PROPOSAL_OUTPUT_SCHEMA;
     return DATA_OUTPUT_SCHEMA;
 }
@@ -189,7 +217,8 @@ const BINANCE_TOOLS = new Set(['get_binance_ticker', 'get_binance_order_book', '
 const CRYPTOPANIC_TOOLS = new Set(['get_crypto_news']);
 const MESSARI_TOOLS = new Set(['ask_messari_research', 'get_messari_timeseries_catalog', 'get_messari_timeseries']);
 const MARKETDATA_TOOLS = new Set(['get_fx_quote', 'get_fx_candles', 'get_technical_indicator']);
-const NATIVE_TOOLS = new Set(['search', 'fetch', 'create_trade_proposal', 'list_exchange_methods', 'call_exchange_method', 'get_account_summary']);
+const OBSERVABILITY_TOOLS = new Set<string>([...OBSERVABILITY_MCP_TOOL_NAMES]);
+const NATIVE_TOOLS = new Set(['search', 'fetch', 'create_trade_proposal', 'list_exchange_methods', 'call_exchange_method', 'get_account_summary', ...OBSERVABILITY_MCP_TOOL_NAMES]);
 
 function extractProviderFromToolName(toolName: string): string {
   const marketplaceTool = parseMarketplaceToolName(toolName);
@@ -199,6 +228,7 @@ function extractProviderFromToolName(toolName: string): string {
   if (CRYPTOPANIC_TOOLS.has(toolName)) return 'cryptopanic';
   if (MESSARI_TOOLS.has(toolName)) return 'messari';
   if (MARKETDATA_TOOLS.has(toolName)) return 'marketdata';
+  if (OBSERVABILITY_TOOLS.has(toolName)) return 'observability';
   if (NATIVE_TOOLS.has(toolName)) return 'native';
   if (toolName === TRADEMCP_DOCS_TOOL_NAME || toolName === 'get_trademcp_research_guide') return 'native';
   return 'unknown';
@@ -303,6 +333,33 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                             options: { type: "object", description: "Optional CCXT exchange constructor options, for example defaultType." }
                         },
                         required: ["provider", "method"]
+                    },
+                },
+                {
+                    name: OBSERVABILITY_MCP_TOOL_NAMES[0],
+                    description: "Use this when the user asks about TradeMCP tool usage, MCP client activity, provider latency, error rates, recent order lifecycle events, or system monitoring. Returns read-only observability metrics for the authenticated dashboard user. Do not use for market analysis unless the user asks about TradeMCP reliability or tool behavior.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            since: {
+                                type: "string",
+                                description: "Optional ISO timestamp lower bound. Omit for the default full retained metrics query."
+                            }
+                        }
+                    },
+                    annotations: {
+                        readOnlyHint: true,
+                    },
+                },
+                {
+                    name: OBSERVABILITY_MCP_TOOL_NAMES[1],
+                    description: "Use this when the user asks which TradeMCP providers, tools, credentials, auth flows, or execution paths are currently failing. Returns active unresolved observability alerts for the authenticated dashboard user.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {},
+                    },
+                    annotations: {
+                        readOnlyHint: true,
                     },
                 },
                 {
@@ -757,7 +814,34 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                         method: args.method,
                         result,
                     }))
-                }]
+                }],
+                structuredContent: { provider, method: args.method, result },
+            };
+        }
+
+        if (name === OBSERVABILITY_MCP_TOOL_NAMES[0]) {
+            if (!userId) {
+                throw new Error('Observability metrics require an authenticated dashboard user.');
+            }
+            const since = typeof args?.since === 'string' ? new Date(args.since) : undefined;
+            if (since && Number.isNaN(since.getTime())) {
+                throw new Error('since must be a valid ISO timestamp');
+            }
+            const metrics = await getToolMetrics(userId, since);
+            return {
+                content: [{ type: "text", text: trimToolText(safeJson(metrics)) }],
+                structuredContent: metrics,
+            };
+        }
+
+        if (name === OBSERVABILITY_MCP_TOOL_NAMES[1]) {
+            if (!userId) {
+                throw new Error('Observability alerts require an authenticated dashboard user.');
+            }
+            const alerts = await getActiveAlerts(userId);
+            return {
+                content: [{ type: "text", text: trimToolText(safeJson({ alerts })) }],
+                structuredContent: { alerts },
             };
         }
 

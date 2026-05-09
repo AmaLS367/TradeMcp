@@ -116,6 +116,18 @@ export type ToolMetrics = {
   }[];
 };
 
+export type ObservabilityAlert = {
+  id: string;
+  type: string;
+  provider?: string;
+  toolName?: string;
+  message: string;
+  severity: string;
+  count: number;
+  lastOccurred: string;
+  resolved: boolean;
+};
+
 type ToolAgg = {
   calls: number;
   errors: number;
@@ -267,6 +279,30 @@ async function getRecentOrderEvents(userId: string): Promise<ToolMetrics['recent
     logger.warn({ err, userId }, 'Failed to fetch recent order events');
     return [];
   }
+}
+
+export async function getActiveAlerts(userId: string): Promise<ObservabilityAlert[]> {
+  const snap = await db.collection('alerts')
+    .where('userId', '==', userId)
+    .where('resolved', '==', false)
+    .orderBy('severity', 'desc')
+    .orderBy('createdAt', 'desc')
+    .get();
+
+  return snap.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      type: stringValue(data.type, 'unknown'),
+      provider: stringValue(data.provider) || undefined,
+      toolName: stringValue(data.toolName) || undefined,
+      message: stringValue(data.message),
+      severity: stringValue(data.severity, 'warning'),
+      count: finiteNumber(data.count),
+      lastOccurred: stringValue(data.lastOccurred),
+      resolved: data.resolved === true,
+    };
+  });
 }
 
 /* ------------------------------------------------------------------ */

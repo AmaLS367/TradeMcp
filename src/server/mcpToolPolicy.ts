@@ -3,6 +3,7 @@ import { TRADEMCP_DOCS_TOOL_NAME } from './tradeMcpResearchGuide.js';
 
 export const MARKET_DATA_MCP_TOOL_NAMES = ['get_fx_quote', 'get_fx_candles', 'get_technical_indicator'] as const;
 export const RAW_EXCHANGE_MCP_TOOL_NAMES = ['list_exchange_methods', 'call_exchange_method'] as const;
+export const OBSERVABILITY_MCP_TOOL_NAMES = ['get_observability_metrics', 'get_observability_alerts'] as const;
 
 const SAFE_RESEARCH_TOOL_NAMES = new Set([
   TRADEMCP_DOCS_TOOL_NAME,
@@ -15,6 +16,7 @@ const SAFE_RESEARCH_TOOL_NAMES = new Set([
 
 const TRADING_REVIEW_TOOL_NAMES = new Set([
   ...SAFE_RESEARCH_TOOL_NAMES,
+  ...OBSERVABILITY_MCP_TOOL_NAMES,
   'get_account_summary',
   'create_trade_proposal',
 ]);

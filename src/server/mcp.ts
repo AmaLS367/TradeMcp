@@ -39,9 +39,9 @@ import { createMcpServer } from './mcpServerFactory.js';
 export { ALGORITHM, decrypt, encrypt, getEncryptionKey } from './mcpCrypto.js';
 export { sanitizeFirestoreData } from './firestoreUtils.js';
 export { TRADEMCP_DOCS_TOOL_NAME, getTradeMcpResearchGuide } from './tradeMcpResearchGuide.js';
-export { MARKET_DATA_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, shouldIncludeTool } from './mcpToolPolicy.js';
+export { MARKET_DATA_MCP_TOOL_NAMES, OBSERVABILITY_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, shouldIncludeTool } from './mcpToolPolicy.js';
 export { db } from './mcpFirebase.js';
-import { detectClientType, recordOrderEvent, getToolMetrics } from './observability.js';
+import { detectClientType, recordOrderEvent, getToolMetrics, getActiveAlerts } from './observability.js';
 
 const publicBaseUrl = process.env.PUBLIC_BASE_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3000');
 if (!publicBaseUrl && process.env.NODE_ENV === 'production') {
@@ -648,13 +648,7 @@ mcpRouter.get('/observability/metrics', verifyAuth, async (req, res) => {
 mcpRouter.get('/observability/alerts', verifyAuth, async (req, res) => {
     const userId = (req as any).userId;
     try {
-        const snap = await db.collection('alerts')
-            .where('userId', '==', userId)
-            .where('resolved', '==', false)
-            .orderBy('severity', 'desc')
-            .orderBy('createdAt', 'desc')
-            .get();
-        const alerts = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        const alerts = await getActiveAlerts(userId);
         res.json({ alerts });
     } catch (err: any) {
         logger.error(err, 'Error fetching alerts:', err);
