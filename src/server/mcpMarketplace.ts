@@ -156,7 +156,7 @@ export async function listMarketplaceToolsForServerIds(
       tools.push({
         ...tool,
         name,
-        description: `[${MCP_MARKETPLACE_SERVERS[serverId].name}] ${tool.description || tool.name}`,
+        description: `[${MCP_MARKETPLACE_SERVERS[serverId].name}] Use this when the user specifically asks for data or capabilities from ${MCP_MARKETPLACE_SERVERS[serverId].name}. This is a read-only proxied MCP Market tool exposed through Trade MCP as ${name}; the upstream tool name is ${tool.name}. ${tool.description || tool.name}`,
         annotations: {
           ...tool.annotations,
           readOnlyHint: true,

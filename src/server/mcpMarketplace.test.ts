@@ -83,7 +83,7 @@ describe('MCP marketplace proxy helpers', () => {
     await expect(listMarketplaceToolsForServerIds(['crypto_com'], factory)).resolves.toMatchObject([
       {
         name: 'crypto_com__ticker',
-        description: '[Crypto.com] Crypto.com ticker',
+        description: expect.stringContaining('read-only proxied MCP Market tool'),
         annotations: { readOnlyHint: true },
         _meta: {
           tradeMcpMarketplaceServerId: 'crypto_com',

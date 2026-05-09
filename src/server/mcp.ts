@@ -645,14 +645,14 @@ function createMcpServer(userId: string | null) {
         capabilities: {
             tools: {}
         },
-        instructions: "Use this server to inspect connected crypto exchanges and call Binance/Bybit API methods through CCXT for the authenticated dashboard user. Prefer create_trade_proposal for user-approved trading workflows; use raw exchange calls only when the user explicitly asks for a specific exchange method."
+        instructions: "Trade MCP exposes market data, crypto research, exchange account reads, and human-approved trade proposal tools for the authenticated dashboard user. Prefer read-only analysis tools for research questions. Use create_trade_proposal only when the user asks to prepare a trade for dashboard approval. Use call_exchange_method only when the user explicitly names a CCXT method or asks for raw Binance/Bybit API access."
     });
 
     server.setRequestHandler(ListToolsRequestSchema, async () => {
         const tools: Tool[] = [
                 {
                     name: "get_account_summary",
-                    description: "Use this when the user asks for crypto exchange account balances or a portfolio summary. Returns balances from the user's active Binance/Bybit connections.",
+                    description: "Use this when the user asks for connected exchange balances, portfolio holdings, or account exposure. Returns read-only balances from the user's active Binance/Bybit exchange connections. Do not use for public market prices or trade execution.",
                     inputSchema: {
                         type: "object",
                         properties: {},
@@ -663,29 +663,29 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: "create_trade_proposal",
-                    description: "Use this when the user explicitly asks to prepare a trade. This only creates a pending proposal for human approval in the Trade MCP dashboard; it does not execute the trade directly.",
+                    description: "Use this only when the user explicitly asks to prepare or stage a Binance/Bybit trade. It creates a pending proposal for human approval in the Trade MCP dashboard and never executes the order directly. Do not use for market analysis, price checks, or immediate execution.",
                     inputSchema: {
                         type: "object",
                         properties: {
-                            provider: { type: "string", description: "Exchange provider.", enum: ["binance", "bybit"] },
-                            symbol: { type: "string", description: "Market symbol in exchange format, for example BTC/USDT." },
-                            side: { type: "string", enum: ["buy", "sell"] },
-                            orderType: { type: "string", enum: ["market", "limit"] },
-                            quantity: { type: "number", description: "Order quantity in base asset units." },
-                            price: { type: "number", description: "Limit price. Required for limit orders." },
-                            rationale: { type: "string", description: "Short reason for this trade proposal." }
+                            provider: { type: "string", description: "Exchange where the proposal should be reviewed.", enum: ["binance", "bybit"] },
+                            symbol: { type: "string", description: "Exchange market symbol, for example BTC/USDT. Use the exact pair the user requested." },
+                            side: { type: "string", description: "Trade direction requested by the user.", enum: ["buy", "sell"] },
+                            orderType: { type: "string", description: "Order type for the proposed order. Limit orders require price.", enum: ["market", "limit"] },
+                            quantity: { type: "number", description: "Order quantity in base asset units, for example BTC amount for BTC/USDT." },
+                            price: { type: "number", description: "Limit price in quote currency. Required only for limit orders." },
+                            rationale: { type: "string", description: "Short user-facing reason for the proposal, including key market context or risk note." }
                         },
                         required: ["provider", "symbol", "side", "orderType", "quantity", "rationale"]
                     },
                 },
                 {
                     name: "list_exchange_methods",
-                    description: "List all callable CCXT methods exposed for a Binance or Bybit exchange instance, including unified methods like fetchTicker and exchange-specific raw API methods.",
+                    description: "Use this to discover callable CCXT methods for Binance or Bybit before making a raw exchange call. Prefer this when the user asks what exchange API methods are available. Do not use for normal balances, market data, or trade proposals when a dedicated tool exists.",
                     inputSchema: {
                         type: "object",
                         properties: {
-                            provider: { type: "string", enum: ["binance", "bybit"] },
-                            filter: { type: "string", description: "Optional case-insensitive substring filter, for example order, private, fetch, transfer." },
+                            provider: { type: "string", description: "Exchange implementation to inspect.", enum: ["binance", "bybit"] },
+                            filter: { type: "string", description: "Optional case-insensitive substring filter, for example order, private, fetch, transfer, ticker." },
                             includeHas: { type: "boolean", description: "Include the exchange.has capability map." },
                             options: { type: "object", description: "Optional CCXT exchange constructor options." }
                         },
@@ -697,12 +697,12 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: "call_exchange_method",
-                    description: "Call any callable CCXT method on the authenticated user's Binance or Bybit connection. Use args for positional arguments exactly as CCXT expects. This can call public, private, read, trading, transfer, and raw exchange-specific methods.",
+                    description: "Use this only when the user explicitly requests a specific CCXT method or raw Binance/Bybit API call. This can access public, private, trading, transfer, and raw exchange methods on the user's connection. Prefer dedicated read-only tools and create_trade_proposal for normal workflows.",
                     inputSchema: {
                         type: "object",
                         properties: {
                             provider: { type: "string", enum: ["binance", "bybit"] },
-                            method: { type: "string", description: "CCXT method name, for example fetchTicker, fetchOpenOrders, privateGetAccount, createOrder." },
+                            method: { type: "string", description: "Exact CCXT method name, for example fetchTicker, fetchOpenOrders, privateGetAccount. Avoid trading methods unless explicitly requested." },
                             args: {
                                 type: "array",
                                 description: "Positional arguments passed directly to the CCXT method.",
@@ -719,12 +719,12 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: MARKET_DATA_MCP_TOOL_NAMES[0],
-                    description: "Fetch a real-time forex quote for a currency pair using platform market-data providers. OANDA is preferred when provider is auto.",
+                    description: "Use this when the user asks for a current FX quote, spot rate, bid/ask, or conversion rate for a forex pair. Uses the user's connected OANDA/Twelve Data provider credentials. Do not use for crypto prices.",
                     inputSchema: {
                         type: "object",
                         properties: {
                             symbol: { type: "string", description: "Forex pair, for example EUR/USD, EUR_USD, or EURUSD." },
-                            provider: { type: "string", enum: ["auto", "oanda", "twelve"], description: "Market-data provider. Defaults to auto." }
+                            provider: { type: "string", enum: ["auto", "oanda", "twelve"], description: "Provider preference. Use auto unless the user names OANDA or Twelve Data." }
                         },
                         required: ["symbol"]
                     },
@@ -734,7 +734,7 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: MARKET_DATA_MCP_TOOL_NAMES[1],
-                    description: "Fetch forex candles for a currency pair. OANDA is the default provider; Twelve Data can be selected explicitly or used as auto fallback.",
+                    description: "Use this when the user asks for historical FX candles, OHLC data, or a forex chart. Uses the user's connected OANDA/Twelve Data provider credentials. Do not use for crypto OHLCV.",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -754,7 +754,7 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: MARKET_DATA_MCP_TOOL_NAMES[2],
-                    description: "Fetch a technical indicator for a forex pair from Twelve Data. Supported indicators: sma, ema, rsi, macd, bbands, atr, adx, stoch.",
+                    description: "Use this when the user asks for a forex technical indicator such as SMA, EMA, RSI, MACD, Bollinger Bands, ATR, ADX, or stochastic. Uses the user's Twelve Data credentials and is for FX pairs only.",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -773,15 +773,15 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[0],
-                    description: "Fetch current crypto prices from the authenticated user's CoinGecko API key.",
+                    description: "Use this when the user asks for current crypto spot prices across one or more CoinGecko coin IDs. Uses the user's CoinGecko BYOK API key from Market Data Providers. For public CoinGecko MCP docs/search, use coingecko_public__ tools instead.",
                     inputSchema: {
                         type: "object",
                         properties: {
-                            ids: { type: "array", items: { type: "string" }, description: "CoinGecko coin IDs, for example bitcoin or ethereum." },
-                            vs_currencies: { type: "array", items: { type: "string" }, description: "Quote currencies, defaults to usd." },
-                            include_market_cap: { type: "boolean" },
-                            include_24hr_vol: { type: "boolean" },
-                            include_24hr_change: { type: "boolean" }
+                            ids: { type: "array", items: { type: "string" }, description: "CoinGecko coin IDs, for example bitcoin or ethereum. Do not pass exchange symbols like BTC/USDT." },
+                            vs_currencies: { type: "array", items: { type: "string" }, description: "Quote currencies such as usd, eur, or btc. Defaults to usd." },
+                            include_market_cap: { type: "boolean", description: "Include market capitalization fields when useful for ranking or valuation." },
+                            include_24hr_vol: { type: "boolean", description: "Include 24 hour volume fields when user asks about liquidity or activity." },
+                            include_24hr_change: { type: "boolean", description: "Include 24 hour percent change fields when user asks about recent performance." }
                         },
                         required: ["ids"]
                     },
@@ -789,7 +789,7 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[1],
-                    description: "Fetch CoinGecko market rankings, prices, market caps, and volume.",
+                    description: "Use this when the user asks for crypto market rankings, top coins, market caps, volume, or category-level market snapshots. Uses the user's CoinGecko BYOK API key. Do not use for a single exchange order book.",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -805,7 +805,7 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[2],
-                    description: "Fetch a CoinGecko market chart for a coin ID.",
+                    description: "Use this when the user asks for historical CoinGecko price, market cap, or volume chart data for a coin ID. Uses the user's CoinGecko BYOK API key. Do not use exchange symbols; pass CoinGecko IDs like bitcoin.",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -820,28 +820,28 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[3],
-                    description: "Fetch trending crypto assets from CoinGecko.",
+                    description: "Use this when the user asks what crypto assets are trending on CoinGecko right now. Uses the user's CoinGecko BYOK API key. Do not use for personalized portfolio holdings.",
                     inputSchema: { type: "object", properties: {} },
                     annotations: { readOnlyHint: true },
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[4],
-                    description: "Fetch a public Binance ticker through CCXT. Does not require user Binance keys.",
+                    description: "Use this when the user asks for the current public Binance ticker or last price for an exchange symbol. Does not require user Binance keys. Prefer this over CoinGecko when the user specifically asks about Binance market data.",
                     inputSchema: {
                         type: "object",
-                        properties: { symbol: { type: "string", description: "Exchange symbol, for example BTC/USDT." } },
+                        properties: { symbol: { type: "string", description: "Binance exchange symbol, for example BTC/USDT. Use slash format." } },
                         required: ["symbol"]
                     },
                     annotations: { readOnlyHint: true },
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[5],
-                    description: "Fetch a public Binance order book through CCXT. Does not require user Binance keys.",
+                    description: "Use this when the user asks for Binance bid/ask depth, order book, spread, or liquidity at price levels. Public read-only data; no Binance API key required. Do not use for account open orders.",
                     inputSchema: {
                         type: "object",
                         properties: {
-                            symbol: { type: "string" },
-                            limit: { type: "number", description: "Depth limit, capped at 5000." }
+                            symbol: { type: "string", description: "Binance exchange symbol, for example BTC/USDT." },
+                            limit: { type: "number", description: "Requested depth limit. Keep small for summaries; capped at 5000." }
                         },
                         required: ["symbol"]
                     },
@@ -849,11 +849,11 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[6],
-                    description: "Fetch public Binance OHLCV candles through CCXT.",
+                    description: "Use this when the user asks for Binance historical candles, OHLCV, or chart data for a crypto pair. Public read-only data; no Binance API key required. Prefer this for exchange-specific technical analysis.",
                     inputSchema: {
                         type: "object",
                         properties: {
-                            symbol: { type: "string" },
+                            symbol: { type: "string", description: "Binance exchange symbol, for example BTC/USDT." },
                             interval: { type: "string", description: "Binance timeframe, for example 1m, 5m, 1h, 1d." },
                             limit: { type: "number", description: "Candle count, capped at 1000." }
                         },
@@ -863,7 +863,7 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[7],
-                    description: "Fetch public Binance 24h ticker stats for one symbol or all symbols.",
+                    description: "Use this when the user asks for Binance 24h change, volume, high/low, or market activity for one symbol or all symbols. Public read-only data; no Binance API key required.",
                     inputSchema: {
                         type: "object",
                         properties: { symbol: { type: "string", description: "Optional exchange symbol, for example BTC/USDT." } }
@@ -872,12 +872,12 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[8],
-                    description: "Fetch cryptocurrency news from the authenticated user's CryptoPanic API key.",
+                    description: "Use this when the user asks for recent crypto news, sentiment-filtered news, or headlines for specific currencies. Uses the user's CryptoPanic BYOK API key. Do not use for price data or Messari research reports.",
                     inputSchema: {
                         type: "object",
                         properties: {
-                            currencies: { type: "array", items: { type: "string" } },
-                            kind: { type: "string", enum: ["news", "media"] },
+                            currencies: { type: "array", items: { type: "string" }, description: "Currency tickers such as BTC, ETH, SOL. Leave empty for broad crypto news." },
+                            kind: { type: "string", description: "Content type to return.", enum: ["news", "media"] },
                             filter: { type: "string", description: "CryptoPanic filter such as hot, bullish, bearish, important, rising." },
                             regions: { type: "array", items: { type: "string" } },
                             num_pages: { type: "number" },
@@ -889,13 +889,13 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[9],
-                    description: "Ask Messari research a natural-language crypto question using the user's Messari API key.",
+                    description: "Use this when the user asks an open-ended crypto research question that benefits from Messari analysis, fundamentals, protocols, sectors, or reports. Uses the user's Messari BYOK API key and may be limited by the user's Messari plan. Do not use for simple spot prices.",
                     inputSchema: {
                         type: "object",
                         properties: {
-                            question: { type: "string" },
-                            verbosity: { type: "string" },
-                            response_format: { type: "string" }
+                            question: { type: "string", description: "Clear natural-language research question. Include asset/protocol, timeframe, and the decision context when known." },
+                            verbosity: { type: "string", description: "Optional response depth requested from Messari, for example brief or detailed." },
+                            response_format: { type: "string", description: "Optional desired format, for example summary, bullets, or JSON if supported by the plan." }
                         },
                         required: ["question"]
                     },
@@ -903,22 +903,22 @@ function createMcpServer(userId: string | null) {
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[10],
-                    description: "Fetch the Messari timeseries dataset catalog using the user's Messari API key.",
+                    description: "Use this to discover which Messari timeseries datasets are available before requesting a specific timeseries. Uses the user's Messari BYOK API key and access depends on the user's plan.",
                     inputSchema: { type: "object", properties: {} },
                     annotations: { readOnlyHint: true },
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[11],
-                    description: "Fetch Messari timeseries data for an asset, market, exchange, or network.",
+                    description: "Use this when the user asks for structured Messari historical metrics for an asset, market, exchange, or network and you already know the dataset slug. If unsure which dataset slug to use, call get_messari_timeseries_catalog first.",
                     inputSchema: {
                         type: "object",
                         properties: {
                             entityType: { type: "string", enum: ["assets", "markets", "exchanges", "networks"] },
-                            entityIdentifier: { type: "string" },
-                            datasetSlug: { type: "string" },
-                            start: { type: "string" },
-                            end: { type: "string" },
-                            granularity: { type: "string" }
+                            entityIdentifier: { type: "string", description: "Messari entity identifier, for example an asset slug or symbol supported by Messari." },
+                            datasetSlug: { type: "string", description: "Exact dataset slug from get_messari_timeseries_catalog." },
+                            start: { type: "string", description: "Optional ISO date/time start boundary." },
+                            end: { type: "string", description: "Optional ISO date/time end boundary." },
+                            granularity: { type: "string", description: "Optional candle/metric granularity supported by the dataset." }
                         },
                         required: ["entityType", "entityIdentifier", "datasetSlug"]
                     },
