@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { encrypt, decrypt, RAW_EXCHANGE_MCP_TOOL_NAMES, sanitizeFirestoreData, shouldIncludeTool } from './mcp';
+import {
+  decrypt,
+  encrypt,
+  getTradeMcpResearchGuide,
+  RAW_EXCHANGE_MCP_TOOL_NAMES,
+  sanitizeFirestoreData,
+  shouldIncludeTool,
+  TRADEMCP_DOCS_TOOL_NAME,
+} from './mcp';
 
 // Mock process.env
 const ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -76,5 +84,34 @@ describe('MCP profile tool visibility', () => {
       expect(shouldIncludeTool(toolName, 'trading_review')).toBe(true);
       expect(shouldIncludeTool(toolName, 'full_access')).toBe(true);
     }
+  });
+
+  it('exposes TradeMCP research guide in safe research profiles', () => {
+    expect(shouldIncludeTool(TRADEMCP_DOCS_TOOL_NAME, 'safe_research')).toBe(true);
+    expect(shouldIncludeTool(TRADEMCP_DOCS_TOOL_NAME, 'trading_review')).toBe(true);
+  });
+});
+
+describe('TradeMCP research guide', () => {
+  it('documents fundamental-analysis source priority and data-gap rules', () => {
+    expect(getTradeMcpResearchGuide('fundamental_crypto')).toMatchObject({
+      role: expect.stringContaining('fundamental analyst'),
+      recommendedToolsInOrder: expect.arrayContaining([
+        expect.stringContaining('get_crypto_markets'),
+        expect.stringContaining('dune__'),
+      ]),
+      outputFormat: {
+        thesis: expect.any(String),
+        bullCase: expect.any(String),
+        bearCase: expect.any(String),
+        scores: expect.any(Array),
+        verdict: expect.any(String),
+        dataGaps: expect.any(String),
+      },
+      rules: expect.arrayContaining([
+        expect.stringContaining('Do not hallucinate unavailable metrics'),
+        expect.stringContaining('Never analyze a cryptoasset in isolation'),
+      ]),
+    });
   });
 });
