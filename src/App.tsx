@@ -12,17 +12,17 @@ import { Toaster, toast } from 'sonner';
 import { ThemeProvider, useTheme } from './theme-provider';
 import { ModeToggle } from '../components/mode-toggle';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  LayoutDashboard, 
-  ArrowLeftRight, 
-  Settings, 
-  LogOut, 
-  Plus, 
-  Trash2, 
-  Power, 
-  CheckCircle2, 
-  XCircle, 
-  Clock, 
+import {
+  LayoutDashboard,
+  ArrowLeftRight,
+  Settings,
+  LogOut,
+  Plus,
+  Trash2,
+  Power,
+  CheckCircle2,
+  XCircle,
+  Clock,
   ShieldCheck,
   Zap,
   Copy,
@@ -36,8 +36,10 @@ import {
   RefreshCw,
   Webhook,
   Bitcoin,
-  ChartNoAxesColumnIncreasing
+  ChartNoAxesColumnIncreasing,
+  Plug2,
 } from 'lucide-react';
+import { AIClientConnections } from './AIClientConnections';
 
 enum OperationType {
   CREATE = 'create',
@@ -169,11 +171,17 @@ function AuthGuard() {
             label="MCP Market"
             onClick={() => setActiveTab('mcp-market')}
           />
-          <NavItem 
-            active={activeTab === 'settings'} 
-            icon={Settings} 
-            label="Settings" 
-            onClick={() => setActiveTab('settings')} 
+          <NavItem
+            active={activeTab === 'ai-clients'}
+            icon={Plug2}
+            label="Connect"
+            onClick={() => setActiveTab('ai-clients')}
+          />
+          <NavItem
+            active={activeTab === 'settings'}
+            icon={Settings}
+            label="Settings"
+            onClick={() => setActiveTab('settings')}
           />
         </nav>
 
@@ -220,7 +228,7 @@ function AuthGuard() {
         {/* Mobile Nav */}
         <div className="lg:hidden px-6 py-2 border-b border-border/40 bg-muted/30">
            <div className="flex gap-2 overflow-x-auto no-scrollbar py-2">
-              {['proposals', 'connections', 'data-providers', 'mcp-market', 'settings'].map(tab => (
+              {['proposals', 'connections', 'data-providers', 'mcp-market', 'ai-clients', 'settings'].map(tab => (
                 <Button 
                   key={tab}
                   variant={activeTab === tab ? 'default' : 'ghost'}
@@ -247,6 +255,7 @@ function AuthGuard() {
               {activeTab === 'connections' && <ExchangeConnections user={user} />}
               {activeTab === 'data-providers' && <MarketDataProviders user={user} />}
               {activeTab === 'mcp-market' && <McpMarket user={user} />}
+              {activeTab === 'ai-clients' && <AIClientConnections />}
               {activeTab === 'settings' && <MCPSettings />}
             </motion.div>
           </AnimatePresence>

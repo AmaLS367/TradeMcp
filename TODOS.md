@@ -1,6 +1,6 @@
 # Trade MCP TODOs
 
-## AI Client Connections
+## AI Client Connections - выполнено
 
 - Add a dedicated "Connect AI Clients" dashboard section for ChatGPT, Claude, Gemini CLI, Cursor, and other MCP clients.
 - Provide copy-ready client configuration snippets for each supported AI client.

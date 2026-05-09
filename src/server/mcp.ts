@@ -392,6 +392,32 @@ const SUPPORTED_PROVIDERS = ['binance', 'bybit'] as const;
 const MAX_TOOL_RESPONSE_CHARS = 60_000;
 export const MARKET_DATA_MCP_TOOL_NAMES = ['get_fx_quote', 'get_fx_candles', 'get_technical_indicator'] as const;
 
+const SAFE_RESEARCH_TOOL_NAMES = new Set([
+    ...MARKET_DATA_MCP_TOOL_NAMES,
+    ...CRYPTO_ANALYSIS_MCP_TOOL_NAMES,
+    'search',
+    'fetch',
+]);
+
+const TRADING_REVIEW_TOOL_NAMES = new Set([
+    ...SAFE_RESEARCH_TOOL_NAMES,
+    'get_account_summary',
+    'create_trade_proposal',
+]);
+
+function shouldIncludeTool(name: string, profile?: string): boolean {
+    if (!profile || profile === 'full_access') return true;
+    if (profile === 'trading_review') return TRADING_REVIEW_TOOL_NAMES.has(name);
+    if (profile === 'safe_research') return SAFE_RESEARCH_TOOL_NAMES.has(name);
+    return true;
+}
+
+function isMarketplaceToolAllowed(toolName: string, profile?: string): boolean {
+    if (!profile || profile === 'full_access') return true;
+    // Marketplace tools (crypto_com__, coingecko_public__) are read-only market data — allow in all profiles
+    return true;
+}
+
 function base64UrlSha256(value: string) {
     return crypto
         .createHash('sha256')
@@ -637,7 +663,7 @@ function assertMethodCallable(exchange: any, method: unknown): asserts method is
     }
 }
 
-function createMcpServer(userId: string | null) {
+function createMcpServer(userId: string | null, profile?: string) {
     const server = new Server({
         name: "TradeMCPServer",
         version: "1.1.0"
@@ -649,7 +675,7 @@ function createMcpServer(userId: string | null) {
     });
 
     server.setRequestHandler(ListToolsRequestSchema, async () => {
-        const tools: Tool[] = [
+        const allTools: Tool[] = [
                 {
                     name: "get_account_summary",
                     description: "Use this when the user asks for connected exchange balances, portfolio holdings, or account exposure. Returns read-only balances from the user's active Binance/Bybit exchange connections. Do not use for public market prices or trade execution.",
@@ -923,11 +949,39 @@ function createMcpServer(userId: string | null) {
                         required: ["entityType", "entityIdentifier", "datasetSlug"]
                     },
                     annotations: { readOnlyHint: true },
-                }
+                },
+                {
+                    name: "search",
+                    description: "Use this to search across crypto assets, news headlines, and research by keyword. Returns unified results from CoinGecko (assets), CryptoPanic (news), and Messari (research). Good for discovery when the user does not specify a tool. Supports type filter: assets, news, research, or all.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            query: { type: "string", description: "Search keyword, e.g. ethereum, DeFi, layer 2." },
+                            type: { type: "string", enum: ["all", "assets", "news", "research"], description: "Scope of search. Defaults to all." }
+                        },
+                        required: ["query"]
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: "fetch",
+                    description: "Use this to fetch content from a public HTTPS URL and return it as text. Useful for reading documentation pages, API responses, or news articles by URL. Only HTTPS URLs are allowed. Returns the first 8000 characters of the response body.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            url: { type: "string", description: "A public HTTPS URL to fetch." }
+                        },
+                        required: ["url"]
+                    },
+                    annotations: { readOnlyHint: true },
+                },
             ];
 
+        const tools = allTools.filter((t) => shouldIncludeTool(t.name, profile));
+
         try {
-            tools.push(...await listMarketplaceToolsForServerIds(await getEnabledMarketplaceServerIds(userId)));
+            const marketplaceTools = await listMarketplaceToolsForServerIds(await getEnabledMarketplaceServerIds(userId));
+            tools.push(...marketplaceTools.filter((t) => isMarketplaceToolAllowed(t.name, profile)));
         } catch (err) {
             logger.warn({ err, userId }, 'Failed to list enabled marketplace MCP tools');
         }
@@ -1225,6 +1279,78 @@ function createMcpServer(userId: string | null) {
                 content: [{
                     type: "text",
                     text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === "search") {
+            const query = typeof args?.query === 'string' ? args.query : '';
+            const type = typeof args?.type === 'string' ? args.type : 'all';
+            if (!query.trim()) throw new Error('query is required');
+
+            const results: Record<string, unknown> = {};
+
+            if (type === 'all' || type === 'assets') {
+                try {
+                    const r = await import('axios').then(({ default: axios }) =>
+                        axios.get('https://api.coingecko.com/api/v3/search', { params: { query } })
+                    );
+                    results.assets = {
+                        coins: (r.data.coins || []).slice(0, 10),
+                        nfts: (r.data.nfts || []).slice(0, 5),
+                    };
+                } catch (err: any) {
+                    results.assets = { error: err.message };
+                }
+            }
+
+            if (type === 'all' || type === 'news') {
+                try {
+                    const credentials = await getCryptoPanicCredentials(userId).catch(() => null);
+                    if (credentials) {
+                        const news = await getCryptoPanicNews({ search: query, num_pages: 1, public: true }, credentials);
+                        results.news = news;
+                    } else {
+                        results.news = { error: 'CryptoPanic not configured — add key in Data Providers' };
+                    }
+                } catch (err: any) {
+                    results.news = { error: err.message };
+                }
+            }
+
+            if (type === 'all' || type === 'research') {
+                try {
+                    const credentials = await getMessariCredentials(userId).catch(() => null);
+                    if (credentials) {
+                        const research = await askMessariResearch({ question: query }, credentials);
+                        results.research = research;
+                    } else {
+                        results.research = { error: 'Messari not configured — add key in Data Providers' };
+                    }
+                } catch (err: any) {
+                    results.research = { error: err.message };
+                }
+            }
+
+            return { content: [{ type: "text", text: trimToolText(safeJson(results)) }] };
+        }
+
+        if (name === "fetch") {
+            const url = typeof args?.url === 'string' ? args.url.trim() : '';
+            if (!url) throw new Error('url is required');
+            if (!url.startsWith('https://')) throw new Error('Only HTTPS URLs are supported');
+            const { default: axios } = await import('axios');
+            const response = await axios.get(url, {
+                responseType: 'text',
+                headers: { Accept: 'text/html,application/json,text/plain,*/*' },
+                timeout: 15_000,
+                maxContentLength: 500_000,
+            });
+            const text: string = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(text),
                 }]
             };
         }
@@ -1800,7 +1926,8 @@ mcpRouter.post('/', oauthMiddleware, async (req, res) => {
 
     try {
         const userId = await userIdFromMcpRequest(req);
-        server = createMcpServer(userId);
+        const profile = typeof req.query.profile === 'string' ? req.query.profile : undefined;
+        server = createMcpServer(userId, profile);
         transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: undefined,
         });
@@ -1841,8 +1968,9 @@ mcpRouter.get('/', oauthMiddleware, (_req, res) => {
 mcpRouter.get('/sse', oauthMiddleware, async (req, res) => {
     try {
         const userId = await userIdFromMcpRequest(req);
+        const profile = typeof req.query.profile === 'string' ? req.query.profile : undefined;
         const transport = new SSEServerTransport("/api/mcp/messages", res);
-        const server = createMcpServer(userId);
+        const server = createMcpServer(userId, profile);
         await server.connect(transport);
         transports.set(transport.sessionId, transport);
         
