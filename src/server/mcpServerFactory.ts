@@ -47,6 +47,105 @@ import {
 } from './mcpCredentials.js';
 
 const MAX_TOOL_RESPONSE_CHARS = 60_000;
+const DATA_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
+    type: "object",
+    properties: {
+        data: {
+            type: "object",
+            description: "Structured data returned by the tool. Exact fields depend on the provider/API response.",
+        },
+        text: {
+            type: "string",
+            description: "Plain text fallback when the provider response is not JSON-structured.",
+        },
+    },
+    additionalProperties: true,
+};
+
+const TEXT_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
+    type: "object",
+    properties: {
+        text: { type: "string", description: "Fetched text content." },
+    },
+    required: ["text"],
+    additionalProperties: false,
+};
+
+const RESEARCH_GUIDE_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
+    type: "object",
+    properties: {
+        guide: {
+            type: "object",
+            description: "TradeMCP research guide with workflow, recommended tools, source-priority rules, output format, and anti-hallucination constraints.",
+        },
+    },
+    required: ["guide"],
+    additionalProperties: false,
+};
+
+const LIST_EXCHANGE_METHODS_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
+    type: "object",
+    properties: {
+        provider: { type: "string", description: "Exchange provider." },
+        methodCount: { type: "number", description: "Number of callable methods returned." },
+        methods: { type: "array", items: { type: "string" }, description: "Callable CCXT method names." },
+        has: { type: "object", description: "Optional CCXT capability map when requested." },
+    },
+    required: ["provider", "methodCount", "methods"],
+    additionalProperties: true,
+};
+
+const TRADE_PROPOSAL_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
+    type: "object",
+    properties: {
+        proposalId: { type: "string", description: "Created proposal ID." },
+        message: { type: "string", description: "Human-readable proposal status." },
+    },
+    required: ["proposalId", "message"],
+    additionalProperties: false,
+};
+
+function outputSchemaForTool(toolName: string): NonNullable<Tool['outputSchema']> {
+    if (toolName === TRADEMCP_DOCS_TOOL_NAME) return RESEARCH_GUIDE_OUTPUT_SCHEMA;
+    if (toolName === 'fetch') return TEXT_OUTPUT_SCHEMA;
+    if (toolName === 'list_exchange_methods') return LIST_EXCHANGE_METHODS_OUTPUT_SCHEMA;
+    if (toolName === 'create_trade_proposal') return TRADE_PROPOSAL_OUTPUT_SCHEMA;
+    return DATA_OUTPUT_SCHEMA;
+}
+
+function withDefaultOutputSchema(tool: Tool): Tool {
+    return tool.outputSchema ? tool : {
+        ...tool,
+        outputSchema: outputSchemaForTool(tool.name),
+    };
+}
+
+function parseTextContent(result: any) {
+    const text = result.content
+        ?.filter((item: any) => item?.type === 'text' && typeof item.text === 'string')
+        .map((item: any) => item.text)
+        .join('\n') || '';
+
+    if (!text) return { text };
+
+    try {
+        return { data: JSON.parse(text) };
+    } catch {
+        return { text };
+    }
+}
+
+function withStructuredContent(result: any) {
+    if (result?.isError || result?.structuredContent || !Array.isArray(result?.content)) {
+        return result;
+    }
+
+    return {
+        ...result,
+        structuredContent: parseTextContent(result),
+    };
+}
+
 async function getEnabledMarketplaceServerIds(userId: string | null): Promise<McpMarketplaceServerId[]> {
     if (!userId) {
         return [];
@@ -401,7 +500,9 @@ export function createMcpServer(userId: string | null, profile?: string) {
                 },
             ];
 
-        const tools = allTools.filter((t) => shouldIncludeTool(t.name, profile));
+        const tools = allTools
+            .filter((t) => shouldIncludeTool(t.name, profile))
+            .map(withDefaultOutputSchema);
 
         try {
             const marketplaceTools = await listMarketplaceToolsForServerIds(
@@ -409,7 +510,7 @@ export function createMcpServer(userId: string | null, profile?: string) {
                 undefined,
                 (serverId) => getMarketplaceMcpCredentials(userId, serverId),
             );
-            tools.push(...marketplaceTools.filter((t) => isMarketplaceToolAllowed(t.name, profile)));
+            tools.push(...marketplaceTools.filter((t) => isMarketplaceToolAllowed(t.name, profile)).map(withDefaultOutputSchema));
         } catch (err) {
             logger.warn({ err, userId }, 'Failed to list enabled marketplace MCP tools');
         }
@@ -417,7 +518,11 @@ export function createMcpServer(userId: string | null, profile?: string) {
         return { tools };
     });
 
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler(CallToolRequestSchema, async (request) => (
+        withStructuredContent(await handleToolCall(request))
+    ));
+
+    async function handleToolCall(request: any) {
         const { name, arguments: args } = request.params;
         const marketplaceTool = parseMarketplaceToolName(name);
 
@@ -440,7 +545,7 @@ export function createMcpServer(userId: string | null, profile?: string) {
                     undefined,
                     await getMarketplaceMcpCredentials(userId, marketplaceTool.serverId),
                 );
-                return trimMarketplaceToolResult(result, MAX_TOOL_RESPONSE_CHARS) as any;
+                return withStructuredContent(trimMarketplaceToolResult(result, MAX_TOOL_RESPONSE_CHARS));
             } catch (err) {
                 return {
                     content: [{
@@ -453,11 +558,13 @@ export function createMcpServer(userId: string | null, profile?: string) {
         }
 
         if (name === TRADEMCP_DOCS_TOOL_NAME) {
+            const guide = getTradeMcpResearchGuide(args?.topic);
             return {
                 content: [{
                     type: "text",
-                    text: safeJson(getTradeMcpResearchGuide(args?.topic))
-                }]
+                    text: safeJson(guide)
+                }],
+                structuredContent: { guide },
             };
         }
 
@@ -489,7 +596,10 @@ export function createMcpServer(userId: string | null, profile?: string) {
                     }
                 }
             }
-            return { content: [{ type: "text", text: JSON.stringify(balances, null, 2) }] };
+            return {
+                content: [{ type: "text", text: JSON.stringify(balances, null, 2) }],
+                structuredContent: { data: balances },
+            };
         }
 
         if (name === "create_trade_proposal") {
@@ -508,7 +618,11 @@ export function createMcpServer(userId: string | null, profile?: string) {
                 status: 'pending_approval',
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
-            return { content: [{ type: "text", text: `Proposal created with ID: ${proposalRef.id}. It is pending human approval in the Trade MCP dashboard.` }] };
+            const message = `Proposal created with ID: ${proposalRef.id}. It is pending human approval in the Trade MCP dashboard.`;
+            return {
+                content: [{ type: "text", text: message }],
+                structuredContent: { proposalId: proposalRef.id, message },
+            };
         }
 
         if (name === "list_exchange_methods") {
@@ -536,7 +650,8 @@ export function createMcpServer(userId: string | null, profile?: string) {
                 content: [{
                     type: "text",
                     text: trimToolText(safeJson(payload))
-                }]
+                }],
+                structuredContent: payload,
             };
         }
 
@@ -795,7 +910,7 @@ export function createMcpServer(userId: string | null, profile?: string) {
         }
 
         throw new Error(`Unknown tool: ${name}`);
-    });
+    }
 
     return server;
 }

@@ -87,6 +87,20 @@ export type MarketplaceMcpCredentialsResolver = (
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const TOOL_NAME_SEPARATOR = '__';
+const DEFAULT_MARKETPLACE_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
+  type: 'object',
+  properties: {
+    data: {
+      type: 'object',
+      description: 'Structured upstream MCP result when available or when text content is parseable JSON.',
+    },
+    text: {
+      type: 'string',
+      description: 'Plain text upstream MCP result when structured data is not available.',
+    },
+  },
+  additionalProperties: true,
+};
 
 export function isMcpMarketplaceServerId(value: unknown): value is McpMarketplaceServerId {
   return typeof value === 'string' && value in MCP_MARKETPLACE_SERVERS;
@@ -218,6 +232,7 @@ export async function listMarketplaceToolsForServerIds(
           ...tool.annotations,
           readOnlyHint: true,
         },
+        outputSchema: tool.outputSchema || DEFAULT_MARKETPLACE_OUTPUT_SCHEMA,
         _meta: {
           ...(tool._meta || {}),
           tradeMcpMarketplaceServerId: serverId,
