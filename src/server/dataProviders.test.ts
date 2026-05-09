@@ -18,11 +18,13 @@ describe('data provider credential helpers', () => {
       'coingecko',
       'cryptopanic',
       'messari',
+      'dune',
     ]);
   });
 
   it('uses key-only validation for Messari because live endpoints can be Enterprise gated', () => {
     expect(getDataProviderValidationMode('messari')).toBe('key_only');
+    expect(getDataProviderValidationMode('dune')).toBe('key_only');
     expect(getDataProviderValidationMode('coingecko')).toBe('live_probe');
   });
 

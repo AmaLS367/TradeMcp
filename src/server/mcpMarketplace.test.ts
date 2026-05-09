@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   MCP_MARKETPLACE_SERVERS,
   callMarketplaceTool,
+  getMarketplaceServerRequiredDataProvider,
   isMcpMarketplaceServerId,
   listMarketplaceToolsForServerIds,
   parseMarketplaceToolName,
@@ -12,8 +13,8 @@ import {
 } from './mcpMarketplace';
 
 describe('MCP marketplace registry', () => {
-  it('defines the first public no-auth MCP servers', () => {
-    expect(Object.keys(MCP_MARKETPLACE_SERVERS)).toEqual(['crypto_com', 'coingecko_public']);
+  it('defines crypto research MCP servers', () => {
+    expect(Object.keys(MCP_MARKETPLACE_SERVERS)).toEqual(['crypto_com', 'coingecko_public', 'chainlink', 'dune']);
     expect(MCP_MARKETPLACE_SERVERS.crypto_com).toMatchObject({
       auth: 'none',
       transport: 'streamable_http',
@@ -24,6 +25,20 @@ describe('MCP marketplace registry', () => {
       transport: 'streamable_http',
       endpoint: 'https://mcp.api.coingecko.com/mcp',
     });
+    expect(MCP_MARKETPLACE_SERVERS.chainlink).toMatchObject({
+      auth: 'none',
+      transport: 'streamable_http',
+      endpoint: 'https://chainlink.mcp.junct.dev/mcp',
+    });
+    expect(MCP_MARKETPLACE_SERVERS.dune).toMatchObject({
+      auth: 'api_key',
+      dataProviderId: 'dune',
+      apiKeyHeaderName: 'x-dune-api-key',
+      transport: 'streamable_http',
+      endpoint: 'https://api.dune.com/mcp/v1',
+    });
+    expect(getMarketplaceServerRequiredDataProvider('dune')).toBe('dune');
+    expect(getMarketplaceServerRequiredDataProvider('chainlink')).toBeUndefined();
   });
 
   it('accepts only known marketplace server ids', () => {
@@ -111,6 +126,25 @@ describe('MCP marketplace proxy helpers', () => {
       name: 'search',
       arguments: { query: 'btc' },
     }, undefined, { timeout: 15000 });
+  });
+
+  it('passes marketplace credentials into authenticated server clients', async () => {
+    const factory = vi.fn<MarketplaceMcpClientFactory>((_server, credentials) => ({
+      connect: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      callTool: vi.fn(async () => ({ content: [] })),
+      listTools: vi.fn(async () => ({
+        tools: [{
+          name: `auth-${credentials?.apiKey}`,
+          inputSchema: { type: 'object' as const, properties: {} },
+        }],
+      })),
+    }));
+
+    await expect(listMarketplaceToolsForServerIds(['dune'], factory, async () => ({ apiKey: 'dune-key' }))).resolves.toMatchObject([
+      { name: 'dune__auth-dune-key' },
+    ]);
+    expect(factory).toHaveBeenCalledWith(MCP_MARKETPLACE_SERVERS.dune, { apiKey: 'dune-key' });
   });
 
   it('keeps listing other enabled servers when one upstream server fails', async () => {

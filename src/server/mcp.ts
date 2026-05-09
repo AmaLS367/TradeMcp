@@ -45,6 +45,7 @@ import {
 } from './dataProviders.js';
 import {
     callMarketplaceTool,
+    getMarketplaceServerRequiredDataProvider,
     isMcpMarketplaceServerId,
     listMcpMarketplaceCatalog,
     listMarketplaceServerTools,
@@ -54,6 +55,7 @@ import {
     toPublicMcpServerConnection,
     trimMarketplaceToolResult,
     type McpMarketplaceServerId,
+    type MarketplaceMcpCredentials,
     type StoredMcpServerConnection,
 } from './mcpMarketplace.js';
 
@@ -656,6 +658,15 @@ async function isMarketplaceServerEnabled(userId: string | null, serverId: McpMa
     return doc.exists && doc.data()?.isEnabled === true;
 }
 
+async function getMarketplaceMcpCredentials(userId: string | null, serverId: McpMarketplaceServerId): Promise<MarketplaceMcpCredentials | undefined> {
+    const providerId = getMarketplaceServerRequiredDataProvider(serverId);
+    if (!providerId) {
+        return undefined;
+    }
+    const provider = await getActiveDataProvider(userId, providerId);
+    return { apiKey: provider.apiKey || '' };
+}
+
 function assertMethodCallable(exchange: any, method: unknown): asserts method is string {
     if (typeof method !== 'string' || !method.trim()) {
         throw new Error('method must be a non-empty string');
@@ -983,7 +994,11 @@ function createMcpServer(userId: string | null, profile?: string) {
         const tools = allTools.filter((t) => shouldIncludeTool(t.name, profile));
 
         try {
-            const marketplaceTools = await listMarketplaceToolsForServerIds(await getEnabledMarketplaceServerIds(userId));
+            const marketplaceTools = await listMarketplaceToolsForServerIds(
+                await getEnabledMarketplaceServerIds(userId),
+                undefined,
+                (serverId) => getMarketplaceMcpCredentials(userId, serverId),
+            );
             tools.push(...marketplaceTools.filter((t) => isMarketplaceToolAllowed(t.name, profile)));
         } catch (err) {
             logger.warn({ err, userId }, 'Failed to list enabled marketplace MCP tools');
@@ -1012,6 +1027,8 @@ function createMcpServer(userId: string | null, profile?: string) {
                     marketplaceTool.serverId,
                     marketplaceTool.upstreamToolName,
                     (args || {}) as Record<string, unknown>,
+                    undefined,
+                    await getMarketplaceMcpCredentials(userId, marketplaceTool.serverId),
                 );
                 return trimMarketplaceToolResult(result, MAX_TOOL_RESPONSE_CHARS) as any;
             } catch (err) {
@@ -1685,7 +1702,11 @@ mcpRouter.post('/mcp-servers/:serverId/test', verifyAuth, async (req, res) => {
     const docRef = db.doc(`users/${userId}/mcp_server_connections/${serverId}`);
     const now = admin.firestore.FieldValue.serverTimestamp();
     try {
-        const result = await listMarketplaceServerTools(serverId);
+        const result = await listMarketplaceServerTools(
+            serverId,
+            undefined,
+            await getMarketplaceMcpCredentials(userId, serverId),
+        );
         const existingSnap = await docRef.get();
         const existing = existingSnap.exists ? existingSnap.data() as StoredMcpServerConnection : undefined;
         await docRef.set(sanitizeFirestoreData({
@@ -1740,7 +1761,7 @@ async function validateDataProviderInput(provider: DataProviderId, input: Record
     const decrypted = decryptDataProviderDocument(doc, decrypt);
     if (getDataProviderValidationMode(provider) === 'key_only') {
         return {
-            warning: 'Messari API permissions are plan-specific, so the key was accepted without calling Enterprise-gated endpoints.',
+            warning: `${provider} API permissions are plan-specific, so the key was accepted without calling plan-gated endpoints.`,
         };
     }
 

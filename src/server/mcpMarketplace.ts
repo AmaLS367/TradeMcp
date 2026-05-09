@@ -21,6 +21,26 @@ export const MCP_MARKETPLACE_SERVERS = {
     transport: 'streamable_http',
     endpoint: 'https://mcp.api.coingecko.com/mcp',
   },
+  chainlink: {
+    id: 'chainlink',
+    name: 'Chainlink',
+    description: 'Public Chainlink MCP tools for feed registry and protocol-specific Chainlink data.',
+    category: 'crypto_fundamentals',
+    auth: 'none',
+    transport: 'streamable_http',
+    endpoint: 'https://chainlink.mcp.junct.dev/mcp',
+  },
+  dune: {
+    id: 'dune',
+    name: 'Dune',
+    description: 'Official Dune MCP server for on-chain analytics, table discovery, SQL execution, and usage metrics.',
+    category: 'onchain_analytics',
+    auth: 'api_key',
+    dataProviderId: 'dune',
+    apiKeyHeaderName: 'x-dune-api-key',
+    transport: 'streamable_http',
+    endpoint: 'https://api.dune.com/mcp/v1',
+  },
 } as const;
 
 export type McpMarketplaceServerId = keyof typeof MCP_MARKETPLACE_SERVERS;
@@ -52,7 +72,18 @@ export type MarketplaceMcpClient = {
   close(): Promise<void> | void;
 };
 
-export type MarketplaceMcpClientFactory = (server: McpMarketplaceServerDefinition) => MarketplaceMcpClient;
+export type MarketplaceMcpCredentials = {
+  apiKey?: string;
+};
+
+export type MarketplaceMcpClientFactory = (
+  server: McpMarketplaceServerDefinition,
+  credentials?: MarketplaceMcpCredentials,
+) => MarketplaceMcpClient;
+
+export type MarketplaceMcpCredentialsResolver = (
+  serverId: McpMarketplaceServerId,
+) => Promise<MarketplaceMcpCredentials | undefined>;
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const TOOL_NAME_SEPARATOR = '__';
@@ -63,6 +94,11 @@ export function isMcpMarketplaceServerId(value: unknown): value is McpMarketplac
 
 export function listMcpMarketplaceCatalog() {
   return Object.values(MCP_MARKETPLACE_SERVERS);
+}
+
+export function getMarketplaceServerRequiredDataProvider(serverId: McpMarketplaceServerId) {
+  const server = MCP_MARKETPLACE_SERVERS[serverId];
+  return 'dataProviderId' in server ? server.dataProviderId : undefined;
 }
 
 export function toPublicMcpServerConnection(
@@ -102,14 +138,33 @@ export function parseMarketplaceToolName(toolName: string): { serverId: McpMarke
   return { serverId, upstreamToolName };
 }
 
-export function createMarketplaceMcpClient(server: McpMarketplaceServerDefinition): MarketplaceMcpClient {
+function marketplaceRequestInit(server: McpMarketplaceServerDefinition, credentials?: MarketplaceMcpCredentials): RequestInit | undefined {
+  if (!('apiKeyHeaderName' in server)) {
+    return undefined;
+  }
+  if (!credentials?.apiKey) {
+    throw new Error(`${server.name} API key is required. Connect ${server.dataProviderId} in Data Providers before enabling this MCP server.`);
+  }
+  return {
+    headers: {
+      [server.apiKeyHeaderName]: credentials.apiKey,
+    },
+  };
+}
+
+export function createMarketplaceMcpClient(
+  server: McpMarketplaceServerDefinition,
+  credentials?: MarketplaceMcpCredentials,
+): MarketplaceMcpClient {
   const client = new Client({
     name: 'TradeMCPMarketplaceClient',
     version: '1.0.0',
   }, {
     capabilities: {},
   });
-  const transport = new StreamableHTTPClientTransport(new URL(server.endpoint));
+  const transport = new StreamableHTTPClientTransport(new URL(server.endpoint), {
+    requestInit: marketplaceRequestInit(server, credentials),
+  });
 
   return {
     connect: (options?: { timeout?: number }) => client.connect(transport, options),
@@ -122,9 +177,10 @@ export function createMarketplaceMcpClient(server: McpMarketplaceServerDefinitio
 export async function listMarketplaceServerTools(
   serverId: McpMarketplaceServerId,
   clientFactory: MarketplaceMcpClientFactory = createMarketplaceMcpClient,
+  credentials?: MarketplaceMcpCredentials,
 ) {
   const server = MCP_MARKETPLACE_SERVERS[serverId];
-  const client = clientFactory(server);
+  const client = clientFactory(server, credentials);
   try {
     await client.connect({ timeout: DEFAULT_TIMEOUT_MS });
     return await client.listTools(undefined, { timeout: DEFAULT_TIMEOUT_MS });
@@ -136,6 +192,7 @@ export async function listMarketplaceServerTools(
 export async function listMarketplaceToolsForServerIds(
   serverIds: McpMarketplaceServerId[],
   clientFactory: MarketplaceMcpClientFactory = createMarketplaceMcpClient,
+  credentialsResolver?: MarketplaceMcpCredentialsResolver,
 ): Promise<Tool[]> {
   const tools: Tool[] = [];
   const seen = new Set<string>();
@@ -143,7 +200,7 @@ export async function listMarketplaceToolsForServerIds(
   for (const serverId of serverIds) {
     let result: { tools: Tool[] };
     try {
-      result = await listMarketplaceServerTools(serverId, clientFactory);
+      result = await listMarketplaceServerTools(serverId, clientFactory, await credentialsResolver?.(serverId));
     } catch {
       continue;
     }
@@ -178,9 +235,10 @@ export async function callMarketplaceTool(
   upstreamToolName: string,
   args: Record<string, unknown> | undefined,
   clientFactory: MarketplaceMcpClientFactory = createMarketplaceMcpClient,
+  credentials?: MarketplaceMcpCredentials,
 ) {
   const server = MCP_MARKETPLACE_SERVERS[serverId];
-  const client = clientFactory(server);
+  const client = clientFactory(server, credentials);
   try {
     await client.connect({ timeout: DEFAULT_TIMEOUT_MS });
     return await client.callTool({

@@ -29,6 +29,12 @@ export const DATA_PROVIDER_DEFINITIONS = {
     configFields: [],
     defaults: {},
   },
+  dune: {
+    label: 'Dune',
+    secretFields: ['apiKey'],
+    configFields: [],
+    defaults: {},
+  },
 } as const;
 
 export type DataProviderId = keyof typeof DATA_PROVIDER_DEFINITIONS;
@@ -69,7 +75,7 @@ export function isDataProviderId(provider: unknown): provider is DataProviderId 
 }
 
 export function getDataProviderValidationMode(provider: DataProviderId) {
-  return provider === 'messari' ? 'key_only' : 'live_probe';
+  return provider === 'messari' || provider === 'dune' ? 'key_only' : 'live_probe';
 }
 
 function getStringField(input: Record<string, unknown>, field: string) {
