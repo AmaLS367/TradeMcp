@@ -30,7 +30,10 @@ import {
   Smartphone,
   Info,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Database,
+  KeyRound,
+  RefreshCw
 } from 'lucide-react';
 
 enum OperationType {
@@ -151,6 +154,12 @@ function AuthGuard() {
             label="Exchanges" 
             onClick={() => setActiveTab('connections')} 
           />
+          <NavItem
+            active={activeTab === 'data-providers'}
+            icon={Database}
+            label="Data Providers"
+            onClick={() => setActiveTab('data-providers')}
+          />
           <NavItem 
             active={activeTab === 'settings'} 
             icon={Settings} 
@@ -202,15 +211,15 @@ function AuthGuard() {
         {/* Mobile Nav */}
         <div className="lg:hidden px-6 py-2 border-b border-border/40 bg-muted/30">
            <div className="flex gap-2 overflow-x-auto no-scrollbar py-2">
-              {['proposals', 'connections', 'settings'].map(tab => (
+              {['proposals', 'connections', 'data-providers', 'settings'].map(tab => (
                 <Button 
                   key={tab}
                   variant={activeTab === tab ? 'default' : 'ghost'}
                   size="sm"
                   onClick={() => setActiveTab(tab)}
-                  className="rounded-full capitalize whitespace-nowrap px-4"
+                  className="rounded-full whitespace-nowrap px-4"
                 >
-                  {tab}
+                  {tab.replace('-', ' ')}
                 </Button>
               ))}
            </div>
@@ -227,6 +236,7 @@ function AuthGuard() {
             >
               {activeTab === 'proposals' && <ProposalsList user={user} />}
               {activeTab === 'connections' && <ExchangeConnections user={user} />}
+              {activeTab === 'data-providers' && <MarketDataProviders user={user} />}
               {activeTab === 'settings' && <MCPSettings />}
             </motion.div>
           </AnimatePresence>
@@ -390,6 +400,286 @@ function MCPSettings() {
         </Card>
       </div>
    );
+}
+
+const DATA_PROVIDER_CONFIGS = [
+  { id: 'oanda', label: 'OANDA', accent: 'bg-blue-500/10 text-blue-500', defaults: { baseUrl: 'https://api-fxpractice.oanda.com', accountId: '', apiKey: '', isActive: true } },
+  { id: 'twelve_data', label: 'Twelve Data', accent: 'bg-violet-500/10 text-violet-500', defaults: { baseUrl: 'https://api.twelvedata.com', apiKey: '', isActive: true } },
+  { id: 'coingecko', label: 'CoinGecko', accent: 'bg-green-500/10 text-green-500', defaults: { tier: 'demo', apiKey: '', isActive: true } },
+  { id: 'cryptopanic', label: 'CryptoPanic', accent: 'bg-red-500/10 text-red-500', defaults: { apiPlan: 'free', apiKey: '', isActive: true } },
+  { id: 'messari', label: 'Messari', accent: 'bg-cyan-500/10 text-cyan-500', defaults: { apiKey: '', isActive: true } },
+] as const;
+
+type DataProviderConfig = typeof DATA_PROVIDER_CONFIGS[number];
+type ProviderFormState = Record<string, any>;
+
+function MarketDataProviders({ user }: { user: User }) {
+  const [providers, setProviders] = useState<Record<string, any>>({});
+  const [forms, setForms] = useState<Record<string, ProviderFormState>>(
+    Object.fromEntries(DATA_PROVIDER_CONFIGS.map((provider) => [provider.id, { ...provider.defaults }]))
+  );
+  const [loading, setLoading] = useState(true);
+  const [busyProvider, setBusyProvider] = useState<string | null>(null);
+
+  const loadProviders = async () => {
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/mcp/data-providers', {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to load data providers');
+      const nextProviders = Object.fromEntries((data.providers || []).map((provider: any) => [provider.provider, provider]));
+      setProviders(nextProviders);
+      setForms((current) => {
+        const next = { ...current };
+        for (const config of DATA_PROVIDER_CONFIGS) {
+          const saved = nextProviders[config.id] as any;
+          next[config.id] = {
+            ...config.defaults,
+            ...(saved?.config || {}),
+            apiKey: '',
+            isActive: saved?.isActive ?? current[config.id]?.isActive ?? true,
+          };
+        }
+        return next;
+      });
+    } catch (err: any) {
+      handleUIError(err, 'Load Data Providers');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProviders();
+  }, [user.uid]);
+
+  const updateForm = (provider: string, field: string, value: string | boolean) => {
+    setForms((current) => ({
+      ...current,
+      [provider]: {
+        ...current[provider],
+        [field]: value,
+      },
+    }));
+  };
+
+  const providerRequest = async (provider: string, method: 'PUT' | 'POST' | 'DELETE') => {
+    const idToken = await user.getIdToken();
+    const url = method === 'POST'
+      ? `/api/mcp/data-providers/${provider}/validate`
+      : `/api/mcp/data-providers/${provider}`;
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: method === 'DELETE' ? undefined : JSON.stringify(forms[provider]),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || data.message || 'Provider request failed');
+    return data;
+  };
+
+  const saveProvider = async (provider: string) => {
+    setBusyProvider(provider);
+    try {
+      await providerRequest(provider, 'PUT');
+      await loadProviders();
+      toast.success('Provider saved');
+    } catch (err: any) {
+      handleUIError(err, 'Save Data Provider');
+    } finally {
+      setBusyProvider(null);
+    }
+  };
+
+  const testProvider = async (provider: string) => {
+    setBusyProvider(provider);
+    try {
+      await providerRequest(provider, 'POST');
+      toast.success('Provider key verified');
+    } catch (err: any) {
+      handleUIError(err, 'Validate Data Provider');
+    } finally {
+      setBusyProvider(null);
+    }
+  };
+
+  const deleteProvider = async (provider: string) => {
+    if (!confirm('Delete this provider key?')) return;
+    setBusyProvider(provider);
+    try {
+      await providerRequest(provider, 'DELETE');
+      await loadProviders();
+      toast.success('Provider deleted');
+    } catch (err: any) {
+      handleUIError(err, 'Delete Data Provider');
+    } finally {
+      setBusyProvider(null);
+    }
+  };
+
+  const toggleProvider = async (provider: string) => {
+    const nextForm = { ...forms[provider], isActive: !forms[provider]?.isActive };
+    setForms((current) => ({ ...current, [provider]: nextForm }));
+    setBusyProvider(provider);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await fetch(`/api/mcp/data-providers/${provider}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(nextForm),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Provider request failed');
+      await loadProviders();
+      toast.success(`Provider ${nextForm.isActive ? 'activated' : 'deactivated'}`);
+    } catch (err: any) {
+      handleUIError(err, 'Toggle Data Provider');
+    } finally {
+      setBusyProvider(null);
+    }
+  };
+
+  const renderProviderFields = (config: DataProviderConfig) => {
+    const form = forms[config.id] || {};
+
+    return (
+      <>
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">API Key</Label>
+          <Input
+            className="h-10 bg-background/50 border-border/40"
+            type="password"
+            value={form.apiKey || ''}
+            placeholder={providers[config.id]?.apiKeyPreview || 'Paste key'}
+            onChange={(e) => updateForm(config.id, 'apiKey', e.target.value)}
+          />
+        </div>
+        {config.id === 'oanda' && (
+          <>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Account ID</Label>
+              <Input
+                className="h-10 bg-background/50 border-border/40"
+                value={form.accountId || ''}
+                onChange={(e) => updateForm(config.id, 'accountId', e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Base URL</Label>
+              <Input
+                className="h-10 bg-background/50 border-border/40"
+                value={form.baseUrl || ''}
+                onChange={(e) => updateForm(config.id, 'baseUrl', e.target.value)}
+              />
+            </div>
+          </>
+        )}
+        {config.id === 'twelve_data' && (
+          <div className="space-y-2">
+            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Base URL</Label>
+            <Input
+              className="h-10 bg-background/50 border-border/40"
+              value={form.baseUrl || ''}
+              onChange={(e) => updateForm(config.id, 'baseUrl', e.target.value)}
+            />
+          </div>
+        )}
+        {config.id === 'coingecko' && (
+          <div className="space-y-2">
+            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tier</Label>
+            <select
+              className="w-full h-10 rounded-xl border border-border/40 bg-background/50 px-3 py-2 text-sm outline-none"
+              value={form.tier || 'demo'}
+              onChange={(e) => updateForm(config.id, 'tier', e.target.value)}
+            >
+              <option value="demo">Demo</option>
+              <option value="pro">Pro</option>
+            </select>
+          </div>
+        )}
+        {config.id === 'cryptopanic' && (
+          <div className="space-y-2">
+            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">API Plan</Label>
+            <Input
+              className="h-10 bg-background/50 border-border/40"
+              value={form.apiPlan || 'free'}
+              onChange={(e) => updateForm(config.id, 'apiPlan', e.target.value)}
+            />
+          </div>
+        )}
+      </>
+    );
+  };
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight mb-2">Market Data Providers</h2>
+          <p className="text-muted-foreground">User-owned keys for analytics tools</p>
+        </div>
+        <Button variant="secondary" className="rounded-xl gap-2" onClick={loadProviders} disabled={loading}>
+          <RefreshCw size={16} /> Refresh
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        {DATA_PROVIDER_CONFIGS.map((config) => {
+          const saved = providers[config.id];
+          const busy = busyProvider === config.id;
+          return (
+            <Card key={config.id} className={`glass-card border-none ${saved && !forms[config.id]?.isActive ? 'opacity-70' : ''}`}>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${config.accent}`}>
+                      <KeyRound size={20} />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">{config.label}</CardTitle>
+                      <CardDescription className="font-mono">{saved?.apiKeyPreview || 'not connected'}</CardDescription>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className={forms[config.id]?.isActive ? 'text-green-500 border-green-500/30' : 'text-muted-foreground'}>
+                    {forms[config.id]?.isActive ? 'Active' : 'Inactive'}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {renderProviderFields(config)}
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Button className="rounded-xl gap-2" onClick={() => saveProvider(config.id)} disabled={busy}>
+                    <Check size={16} /> Save
+                  </Button>
+                  <Button variant="secondary" className="rounded-xl gap-2" onClick={() => testProvider(config.id)} disabled={busy}>
+                    <CheckCircle2 size={16} /> Test
+                  </Button>
+                  {saved && (
+                    <>
+                      <Button variant="secondary" size="icon" className="rounded-xl" onClick={() => toggleProvider(config.id)} disabled={busy} title={forms[config.id]?.isActive ? 'Deactivate' : 'Activate'}>
+                        <Power size={16} />
+                      </Button>
+                      <Button variant="secondary" size="icon" className="rounded-xl hover:bg-destructive hover:text-destructive-foreground" onClick={() => deleteProvider(config.id)} disabled={busy}>
+                        <Trash2 size={16} />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function ExchangeConnections({ user }: { user: User }) {

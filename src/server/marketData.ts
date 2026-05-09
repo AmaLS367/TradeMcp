@@ -51,6 +51,22 @@ export const SUPPORTED_TWELVE_INDICATORS = ['sma', 'ema', 'rsi', 'macd', 'bbands
 export type FxProvider = 'auto' | 'oanda' | 'twelve';
 export type TechnicalIndicator = typeof SUPPORTED_TWELVE_INDICATORS[number];
 
+export type OandaCredentials = {
+  apiKey: string;
+  accountId: string;
+  baseUrl?: string;
+};
+
+export type TwelveDataCredentials = {
+  apiKey: string;
+  baseUrl?: string;
+};
+
+export type MarketDataCredentials = {
+  oanda?: OandaCredentials;
+  twelve_data?: TwelveDataCredentials;
+};
+
 export type FxQuoteArgs = {
   symbol: unknown;
   provider?: unknown;
@@ -137,18 +153,6 @@ export function normalizePositiveInteger(value: unknown, fallback: number, max: 
   return Math.min(numberValue, max);
 }
 
-function requireEnv(name: string) {
-  const value = process.env[name];
-  if (!value?.trim()) {
-    throw new Error(`${name} is not configured`);
-  }
-  return value.trim();
-}
-
-function configuredEnv(name: string, fallback: string) {
-  return process.env[name]?.trim() || fallback;
-}
-
 async function fetchJson(url: URL, init?: RequestInit) {
   const response = await fetch(url, init);
   const text = await response.text();
@@ -170,19 +174,32 @@ async function fetchJson(url: URL, init?: RequestInit) {
   return payload;
 }
 
-export function buildOandaQuoteRequest(symbol: unknown) {
+function requireOandaCredentials(credentials?: OandaCredentials) {
+  if (!credentials?.apiKey?.trim() || !credentials.accountId?.trim()) {
+    throw new Error('Connect OANDA in the dashboard before using this tool');
+  }
+  return credentials;
+}
+
+function requireTwelveCredentials(credentials?: TwelveDataCredentials) {
+  if (!credentials?.apiKey?.trim()) {
+    throw new Error('Connect Twelve Data in the dashboard before using this tool');
+  }
+  return credentials;
+}
+
+export function buildOandaQuoteRequest(symbol: unknown, credentials?: OandaCredentials) {
+  const resolved = requireOandaCredentials(credentials);
   const normalized = normalizeFxSymbol(symbol);
-  const apiKey = requireEnv('OANDA_API_KEY');
-  const accountId = requireEnv('OANDA_ACCOUNT_ID');
-  const baseUrl = configuredEnv('OANDA_BASE_URL', 'https://api-fxpractice.oanda.com');
-  const url = new URL(`/v3/accounts/${encodeURIComponent(accountId)}/pricing`, baseUrl);
+  const baseUrl = resolved.baseUrl?.trim() || 'https://api-fxpractice.oanda.com';
+  const url = new URL(`/v3/accounts/${encodeURIComponent(resolved.accountId)}/pricing`, baseUrl);
   url.searchParams.set('instruments', normalized.oanda);
 
   return {
     url,
     init: ({
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${resolved.apiKey}`,
         'Content-Type': 'application/json',
       },
     } satisfies RequestInit),
@@ -190,10 +207,10 @@ export function buildOandaQuoteRequest(symbol: unknown) {
   };
 }
 
-export function buildOandaCandlesRequest(args: FxCandlesArgs) {
+export function buildOandaCandlesRequest(args: FxCandlesArgs, credentials?: OandaCredentials) {
+  const resolved = requireOandaCredentials(credentials);
   const normalized = normalizeFxSymbol(args.symbol);
-  const apiKey = requireEnv('OANDA_API_KEY');
-  const baseUrl = configuredEnv('OANDA_BASE_URL', 'https://api-fxpractice.oanda.com');
+  const baseUrl = resolved.baseUrl?.trim() || 'https://api-fxpractice.oanda.com';
   const url = new URL(`/v3/instruments/${encodeURIComponent(normalized.oanda)}/candles`, baseUrl);
   url.searchParams.set('price', 'M');
   url.searchParams.set('granularity', normalizeOandaGranularity(args.granularity || args.interval));
@@ -210,7 +227,7 @@ export function buildOandaCandlesRequest(args: FxCandlesArgs) {
     url,
     init: ({
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${resolved.apiKey}`,
         'Content-Type': 'application/json',
       },
     } satisfies RequestInit),
@@ -218,26 +235,26 @@ export function buildOandaCandlesRequest(args: FxCandlesArgs) {
   };
 }
 
-export function buildTwelveQuoteRequest(symbol: unknown) {
+export function buildTwelveQuoteRequest(symbol: unknown, credentials?: TwelveDataCredentials) {
+  const resolved = requireTwelveCredentials(credentials);
   const normalized = normalizeFxSymbol(symbol);
-  const apiKey = requireEnv('TWELVE_DATA_API_KEY');
-  const baseUrl = configuredEnv('TWELVE_DATA_BASE_URL', 'https://api.twelvedata.com');
+  const baseUrl = resolved.baseUrl?.trim() || 'https://api.twelvedata.com';
   const url = new URL('/quote', baseUrl);
   url.searchParams.set('symbol', normalized.twelve);
-  url.searchParams.set('apikey', apiKey);
+  url.searchParams.set('apikey', resolved.apiKey);
 
   return { url, normalized };
 }
 
-export function buildTwelveCandlesRequest(args: FxCandlesArgs) {
+export function buildTwelveCandlesRequest(args: FxCandlesArgs, credentials?: TwelveDataCredentials) {
+  const resolved = requireTwelveCredentials(credentials);
   const normalized = normalizeFxSymbol(args.symbol);
-  const apiKey = requireEnv('TWELVE_DATA_API_KEY');
-  const baseUrl = configuredEnv('TWELVE_DATA_BASE_URL', 'https://api.twelvedata.com');
+  const baseUrl = resolved.baseUrl?.trim() || 'https://api.twelvedata.com';
   const url = new URL('/time_series', baseUrl);
   url.searchParams.set('symbol', normalized.twelve);
   url.searchParams.set('interval', normalizeTwelveInterval(args.interval || args.granularity));
   url.searchParams.set('outputsize', String(normalizePositiveInteger(args.count, 100, 5000)));
-  url.searchParams.set('apikey', apiKey);
+  url.searchParams.set('apikey', resolved.apiKey);
 
   if (typeof args.from === 'string' && args.from.trim()) {
     url.searchParams.set('start_date', args.from.trim());
@@ -249,19 +266,19 @@ export function buildTwelveCandlesRequest(args: FxCandlesArgs) {
   return { url, normalized };
 }
 
-export function buildTwelveIndicatorRequest(args: TechnicalIndicatorArgs) {
+export function buildTwelveIndicatorRequest(args: TechnicalIndicatorArgs, credentials?: TwelveDataCredentials) {
+  const resolved = requireTwelveCredentials(credentials);
   const indicator = typeof args.indicator === 'string' ? args.indicator.trim().toLowerCase() : '';
   if (!SUPPORTED_TWELVE_INDICATORS.includes(indicator as TechnicalIndicator)) {
     throw new Error(`indicator must be one of: ${SUPPORTED_TWELVE_INDICATORS.join(', ')}`);
   }
 
   const normalized = normalizeFxSymbol(args.symbol);
-  const apiKey = requireEnv('TWELVE_DATA_API_KEY');
-  const baseUrl = configuredEnv('TWELVE_DATA_BASE_URL', 'https://api.twelvedata.com');
+  const baseUrl = resolved.baseUrl?.trim() || 'https://api.twelvedata.com';
   const url = new URL(`/${indicator}`, baseUrl);
   url.searchParams.set('symbol', normalized.twelve);
   url.searchParams.set('interval', normalizeTwelveInterval(args.interval));
-  url.searchParams.set('apikey', apiKey);
+  url.searchParams.set('apikey', resolved.apiKey);
 
   if (args.time_period !== undefined && args.time_period !== null && args.time_period !== '') {
     url.searchParams.set('time_period', String(normalizePositiveInteger(args.time_period, 14, 5000)));
@@ -276,22 +293,22 @@ export function buildTwelveIndicatorRequest(args: TechnicalIndicatorArgs) {
   return { url, indicator, normalized };
 }
 
-export async function getFxQuote(args: FxQuoteArgs) {
+export async function getFxQuote(args: FxQuoteArgs, credentials: MarketDataCredentials) {
   const provider = normalizeProvider(args.provider, 'auto');
 
   if (provider === 'twelve') {
-    const request = buildTwelveQuoteRequest(args.symbol);
+    const request = buildTwelveQuoteRequest(args.symbol, credentials.twelve_data);
     return { provider: 'twelve', symbol: request.normalized.slash, data: await fetchJson(request.url) };
   }
 
   try {
-    const request = buildOandaQuoteRequest(args.symbol);
+    const request = buildOandaQuoteRequest(args.symbol, credentials.oanda);
     return { provider: 'oanda', symbol: request.normalized.slash, data: await fetchJson(request.url, request.init) };
   } catch (error) {
     if (provider === 'oanda') {
       throw error;
     }
-    const request = buildTwelveQuoteRequest(args.symbol);
+    const request = buildTwelveQuoteRequest(args.symbol, credentials.twelve_data);
     return {
       provider: 'twelve',
       symbol: request.normalized.slash,
@@ -302,22 +319,22 @@ export async function getFxQuote(args: FxQuoteArgs) {
   }
 }
 
-export async function getFxCandles(args: FxCandlesArgs) {
+export async function getFxCandles(args: FxCandlesArgs, credentials: MarketDataCredentials) {
   const provider = normalizeProvider(args.provider, 'oanda');
 
   if (provider === 'twelve') {
-    const request = buildTwelveCandlesRequest(args);
+    const request = buildTwelveCandlesRequest(args, credentials.twelve_data);
     return { provider: 'twelve', symbol: request.normalized.slash, data: await fetchJson(request.url) };
   }
 
   try {
-    const request = buildOandaCandlesRequest(args);
+    const request = buildOandaCandlesRequest(args, credentials.oanda);
     return { provider: 'oanda', symbol: request.normalized.slash, data: await fetchJson(request.url, request.init) };
   } catch (error) {
     if (provider === 'oanda') {
       throw error;
     }
-    const request = buildTwelveCandlesRequest(args);
+    const request = buildTwelveCandlesRequest(args, credentials.twelve_data);
     return {
       provider: 'twelve',
       symbol: request.normalized.slash,
@@ -328,8 +345,8 @@ export async function getFxCandles(args: FxCandlesArgs) {
   }
 }
 
-export async function getTechnicalIndicator(args: TechnicalIndicatorArgs) {
-  const request = buildTwelveIndicatorRequest(args);
+export async function getTechnicalIndicator(args: TechnicalIndicatorArgs, credentials: MarketDataCredentials) {
+  const request = buildTwelveIndicatorRequest(args, credentials.twelve_data);
   return {
     provider: 'twelve',
     indicator: request.indicator,

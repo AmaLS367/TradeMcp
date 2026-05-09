@@ -14,7 +14,34 @@ import crypto from 'crypto';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { logger } from './logger.js';
 import { validateExchangeKeys } from './exchangeValidator.js';
-import { getFxCandles, getFxQuote, getTechnicalIndicator, SUPPORTED_TWELVE_INDICATORS } from './marketData.js';
+import { getFxCandles, getFxQuote, getTechnicalIndicator, SUPPORTED_TWELVE_INDICATORS, type MarketDataCredentials } from './marketData.js';
+import {
+    CRYPTO_ANALYSIS_MCP_TOOL_NAMES,
+    askMessariResearch,
+    getBinance24hStats,
+    getBinanceKlines,
+    getBinanceOrderBook,
+    getBinanceTicker,
+    getCoinGeckoMarketChart,
+    getCoinGeckoMarkets,
+    getCoinGeckoPrices,
+    getCoinGeckoTrending,
+    getCryptoPanicNews,
+    getMessariTimeseries,
+    getMessariTimeseriesCatalog,
+    type CoinGeckoCredentials,
+    type CryptoPanicCredentials,
+    type MessariCredentials,
+} from './cryptoAnalysis.js';
+import {
+    buildDataProviderDocument,
+    decryptDataProviderDocument,
+    isDataProviderId,
+    toPublicDataProvider,
+    type DataProviderId,
+    type DecryptedDataProvider,
+    type StoredDataProviderDocument,
+} from './dataProviders.js';
 
 // --- Encryption Helpers ---
 export const ALGORITHM = 'aes-256-gcm';
@@ -495,6 +522,74 @@ async function createExchange(provider: string, userId: string | null, options: 
     return new exchangeClass(config);
 }
 
+async function getDataProviderDocument(userId: string, provider: DataProviderId) {
+    const doc = await db.doc(`users/${userId}/data_provider_connections/${provider}`).get();
+    if (!doc.exists) {
+        return null;
+    }
+    return doc.data() as StoredDataProviderDocument;
+}
+
+async function getActiveDataProvider(userId: string | null, provider: DataProviderId): Promise<DecryptedDataProvider> {
+    if (!userId) {
+        throw new Error(`Connect ${provider} in the dashboard before using this tool`);
+    }
+    const doc = await getDataProviderDocument(userId, provider);
+    if (!doc || !doc.isActive) {
+        throw new Error(`Connect ${provider} in the dashboard before using this tool`);
+    }
+    return decryptDataProviderDocument(doc, decrypt);
+}
+
+async function getMarketDataCredentials(userId: string | null): Promise<MarketDataCredentials> {
+    if (!userId) {
+        return {};
+    }
+
+    const [oandaDoc, twelveDoc] = await Promise.all([
+        getDataProviderDocument(userId, 'oanda'),
+        getDataProviderDocument(userId, 'twelve_data'),
+    ]);
+    const credentials: MarketDataCredentials = {};
+    if (oandaDoc?.isActive) {
+        const oanda = decryptDataProviderDocument(oandaDoc, decrypt);
+        credentials.oanda = {
+            apiKey: oanda.apiKey || '',
+            accountId: oanda.accountId || '',
+            baseUrl: oanda.baseUrl,
+        };
+    }
+    if (twelveDoc?.isActive) {
+        const twelve = decryptDataProviderDocument(twelveDoc, decrypt);
+        credentials.twelve_data = {
+            apiKey: twelve.apiKey || '',
+            baseUrl: twelve.baseUrl,
+        };
+    }
+    return credentials;
+}
+
+async function getCoinGeckoCredentials(userId: string | null): Promise<CoinGeckoCredentials> {
+    const provider = await getActiveDataProvider(userId, 'coingecko');
+    return {
+        apiKey: provider.apiKey || '',
+        tier: provider.tier === 'pro' ? 'pro' : 'demo',
+    };
+}
+
+async function getCryptoPanicCredentials(userId: string | null): Promise<CryptoPanicCredentials> {
+    const provider = await getActiveDataProvider(userId, 'cryptopanic');
+    return {
+        apiKey: provider.apiKey || '',
+        apiPlan: provider.apiPlan || 'free',
+    };
+}
+
+async function getMessariCredentials(userId: string | null): Promise<MessariCredentials> {
+    const provider = await getActiveDataProvider(userId, 'messari');
+    return { apiKey: provider.apiKey || '' };
+}
+
 function assertMethodCallable(exchange: any, method: unknown): asserts method is string {
     if (typeof method !== 'string' || !method.trim()) {
         throw new Error('method must be a non-empty string');
@@ -639,6 +734,159 @@ function createMcpServer(userId: string | null) {
                     annotations: {
                         readOnlyHint: true,
                     },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[0],
+                    description: "Fetch current crypto prices from the authenticated user's CoinGecko API key.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            ids: { type: "array", items: { type: "string" }, description: "CoinGecko coin IDs, for example bitcoin or ethereum." },
+                            vs_currencies: { type: "array", items: { type: "string" }, description: "Quote currencies, defaults to usd." },
+                            include_market_cap: { type: "boolean" },
+                            include_24hr_vol: { type: "boolean" },
+                            include_24hr_change: { type: "boolean" }
+                        },
+                        required: ["ids"]
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[1],
+                    description: "Fetch CoinGecko market rankings, prices, market caps, and volume.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            vs_currency: { type: "string", description: "Quote currency, defaults to usd." },
+                            category: { type: "string" },
+                            ids: { type: "string", description: "Optional comma-separated CoinGecko IDs." },
+                            order: { type: "string" },
+                            per_page: { type: "number" },
+                            page: { type: "number" }
+                        }
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[2],
+                    description: "Fetch a CoinGecko market chart for a coin ID.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            id: { type: "string", description: "CoinGecko coin ID, for example bitcoin." },
+                            vs_currency: { type: "string" },
+                            days: { type: "number" },
+                            interval: { type: "string" }
+                        },
+                        required: ["id"]
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[3],
+                    description: "Fetch trending crypto assets from CoinGecko.",
+                    inputSchema: { type: "object", properties: {} },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[4],
+                    description: "Fetch a public Binance ticker through CCXT. Does not require user Binance keys.",
+                    inputSchema: {
+                        type: "object",
+                        properties: { symbol: { type: "string", description: "Exchange symbol, for example BTC/USDT." } },
+                        required: ["symbol"]
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[5],
+                    description: "Fetch a public Binance order book through CCXT. Does not require user Binance keys.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            symbol: { type: "string" },
+                            limit: { type: "number", description: "Depth limit, capped at 5000." }
+                        },
+                        required: ["symbol"]
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[6],
+                    description: "Fetch public Binance OHLCV candles through CCXT.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            symbol: { type: "string" },
+                            interval: { type: "string", description: "Binance timeframe, for example 1m, 5m, 1h, 1d." },
+                            limit: { type: "number", description: "Candle count, capped at 1000." }
+                        },
+                        required: ["symbol"]
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[7],
+                    description: "Fetch public Binance 24h ticker stats for one symbol or all symbols.",
+                    inputSchema: {
+                        type: "object",
+                        properties: { symbol: { type: "string", description: "Optional exchange symbol, for example BTC/USDT." } }
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[8],
+                    description: "Fetch cryptocurrency news from the authenticated user's CryptoPanic API key.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            currencies: { type: "array", items: { type: "string" } },
+                            kind: { type: "string", enum: ["news", "media"] },
+                            filter: { type: "string", description: "CryptoPanic filter such as hot, bullish, bearish, important, rising." },
+                            regions: { type: "array", items: { type: "string" } },
+                            num_pages: { type: "number" },
+                            public: { type: "boolean" },
+                            search: { type: "string" }
+                        }
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[9],
+                    description: "Ask Messari research a natural-language crypto question using the user's Messari API key.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            question: { type: "string" },
+                            verbosity: { type: "string" },
+                            response_format: { type: "string" }
+                        },
+                        required: ["question"]
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[10],
+                    description: "Fetch the Messari timeseries dataset catalog using the user's Messari API key.",
+                    inputSchema: { type: "object", properties: {} },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[11],
+                    description: "Fetch Messari timeseries data for an asset, market, exchange, or network.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            entityType: { type: "string", enum: ["assets", "markets", "exchanges", "networks"] },
+                            entityIdentifier: { type: "string" },
+                            datasetSlug: { type: "string" },
+                            start: { type: "string" },
+                            end: { type: "string" },
+                            granularity: { type: "string" }
+                        },
+                        required: ["entityType", "entityIdentifier", "datasetSlug"]
+                    },
+                    annotations: { readOnlyHint: true },
                 }
             ]
         };
@@ -755,7 +1003,7 @@ function createMcpServer(userId: string | null) {
         }
 
         if (name === MARKET_DATA_MCP_TOOL_NAMES[0]) {
-            const result = await getFxQuote((args || {}) as any);
+            const result = await getFxQuote((args || {}) as any, await getMarketDataCredentials(userId));
             return {
                 content: [{
                     type: "text",
@@ -765,7 +1013,7 @@ function createMcpServer(userId: string | null) {
         }
 
         if (name === MARKET_DATA_MCP_TOOL_NAMES[1]) {
-            const result = await getFxCandles((args || {}) as any);
+            const result = await getFxCandles((args || {}) as any, await getMarketDataCredentials(userId));
             return {
                 content: [{
                     type: "text",
@@ -775,7 +1023,131 @@ function createMcpServer(userId: string | null) {
         }
 
         if (name === MARKET_DATA_MCP_TOOL_NAMES[2]) {
-            const result = await getTechnicalIndicator((args || {}) as any);
+            const result = await getTechnicalIndicator((args || {}) as any, await getMarketDataCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[0]) {
+            const result = await getCoinGeckoPrices((args || {}) as any, await getCoinGeckoCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[1]) {
+            const result = await getCoinGeckoMarkets((args || {}) as any, await getCoinGeckoCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[2]) {
+            const result = await getCoinGeckoMarketChart((args || {}) as any, await getCoinGeckoCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[3]) {
+            const result = await getCoinGeckoTrending(await getCoinGeckoCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[4]) {
+            const exchange = await createExchange('binance', null);
+            const result = await getBinanceTicker(exchange, (args || {}) as any);
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[5]) {
+            const exchange = await createExchange('binance', null);
+            const result = await getBinanceOrderBook(exchange, (args || {}) as any);
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[6]) {
+            const exchange = await createExchange('binance', null);
+            const result = await getBinanceKlines(exchange, (args || {}) as any);
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[7]) {
+            const exchange = await createExchange('binance', null);
+            const result = await getBinance24hStats(exchange, (args || {}) as any);
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[8]) {
+            const result = await getCryptoPanicNews((args || {}) as any, await getCryptoPanicCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[9]) {
+            const result = await askMessariResearch((args || {}) as any, await getMessariCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[10]) {
+            const result = await getMessariTimeseriesCatalog(await getMessariCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[11]) {
+            const result = await getMessariTimeseries((args || {}) as any, await getMessariCredentials(userId));
             return {
                 content: [{
                     type: "text",
@@ -1044,6 +1416,117 @@ export async function verifyAuth(req: express.Request, res: express.Response, ne
 }
 
 // --- API Endpoints ---
+
+async function validateDataProviderInput(provider: DataProviderId, input: Record<string, unknown>, existing?: StoredDataProviderDocument) {
+    const doc = buildDataProviderDocument(provider, { ...input, isActive: true }, encrypt, existing);
+    const decrypted = decryptDataProviderDocument(doc, decrypt);
+
+    if (provider === 'oanda') {
+        await getFxQuote({ symbol: 'EUR/USD', provider: 'oanda' }, {
+            oanda: {
+                apiKey: decrypted.apiKey || '',
+                accountId: decrypted.accountId || '',
+                baseUrl: decrypted.baseUrl,
+            },
+        });
+    } else if (provider === 'twelve_data') {
+        await getFxQuote({ symbol: 'EUR/USD', provider: 'twelve' }, {
+            twelve_data: {
+                apiKey: decrypted.apiKey || '',
+                baseUrl: decrypted.baseUrl,
+            },
+        });
+    } else if (provider === 'coingecko') {
+        await getCoinGeckoTrending({
+            apiKey: decrypted.apiKey || '',
+            tier: decrypted.tier === 'pro' ? 'pro' : 'demo',
+        });
+    } else if (provider === 'cryptopanic') {
+        await getCryptoPanicNews({ num_pages: 1, public: true }, {
+            apiKey: decrypted.apiKey || '',
+            apiPlan: decrypted.apiPlan || 'free',
+        });
+    } else if (provider === 'messari') {
+        await getMessariTimeseriesCatalog({ apiKey: decrypted.apiKey || '' });
+    }
+}
+
+mcpRouter.get('/data-providers', verifyAuth, async (req, res) => {
+    const userId = (req as any).userId;
+    try {
+        const snap = await db.collection(`users/${userId}/data_provider_connections`).get();
+        res.json({
+            providers: snap.docs
+                .filter((doc) => isDataProviderId(doc.id))
+                .map((doc) => toPublicDataProvider(doc.id as DataProviderId, doc.data() as StoredDataProviderDocument)),
+        });
+    } catch (err: any) {
+        logger.error(err, 'Error listing data providers:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+mcpRouter.put('/data-providers/:provider', verifyAuth, async (req, res) => {
+    const provider = req.params.provider;
+    const userId = (req as any).userId;
+    if (!isDataProviderId(provider)) {
+        return res.status(400).json({ error: 'unsupported_data_provider' });
+    }
+
+    try {
+        const docRef = db.doc(`users/${userId}/data_provider_connections/${provider}`);
+        const existingSnap = await docRef.get();
+        const existing = existingSnap.exists ? existingSnap.data() as StoredDataProviderDocument : undefined;
+        const doc = buildDataProviderDocument(provider, req.body || {}, encrypt, existing);
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        await docRef.set(sanitizeFirestoreData({
+            ...doc,
+            createdAt: existing?.createdAt || now,
+            updatedAt: now,
+        }), { merge: true });
+        const saved = await docRef.get();
+        res.json({ success: true, provider: toPublicDataProvider(provider, saved.data() as StoredDataProviderDocument) });
+    } catch (err: any) {
+        logger.error(err, 'Error saving data provider:', err);
+        res.status(400).json({ error: err.message });
+    }
+});
+
+mcpRouter.post('/data-providers/:provider/validate', verifyAuth, async (req, res) => {
+    const provider = req.params.provider;
+    const userId = (req as any).userId;
+    if (!isDataProviderId(provider)) {
+        return res.status(400).json({ error: 'unsupported_data_provider' });
+    }
+
+    try {
+        const docRef = db.doc(`users/${userId}/data_provider_connections/${provider}`);
+        const existingSnap = await docRef.get();
+        const existing = existingSnap.exists ? existingSnap.data() as StoredDataProviderDocument : undefined;
+        await validateDataProviderInput(provider, req.body || {}, existing);
+        if (existing) {
+            await docRef.update({ lastValidatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        }
+        res.json({ valid: true });
+    } catch (err: any) {
+        res.status(400).json({ valid: false, error: err.message });
+    }
+});
+
+mcpRouter.delete('/data-providers/:provider', verifyAuth, async (req, res) => {
+    const provider = req.params.provider;
+    const userId = (req as any).userId;
+    if (!isDataProviderId(provider)) {
+        return res.status(400).json({ error: 'unsupported_data_provider' });
+    }
+
+    try {
+        await db.doc(`users/${userId}/data_provider_connections/${provider}`).delete();
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // Create connection
 mcpRouter.post('/connections', verifyAuth, async (req, res) => {

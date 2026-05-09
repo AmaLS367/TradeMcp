@@ -50,12 +50,9 @@ Optional:
 PORT=3000
 PUBLIC_BASE_URL=https://vmi3245942.contaboserver.net
 VITE_PUBLIC_BASE_URL=https://vmi3245942.contaboserver.net/api/mcp/
-OANDA_API_KEY=...
-OANDA_ACCOUNT_ID=...
-OANDA_BASE_URL=https://api-fxpractice.oanda.com
-TWELVE_DATA_API_KEY=...
-TWELVE_DATA_BASE_URL=https://api.twelvedata.com
 ```
+
+Market data keys are BYOK credentials. Add OANDA, Twelve Data, CoinGecko, CryptoPanic, and Messari keys in the dashboard under `Market Data Providers`; they are encrypted per user and are not read from server environment variables.
 
 ## Run
 
@@ -106,3 +103,65 @@ Returns forex candles from OANDA by default. Twelve Data can be selected with `p
 `get_technical_indicator`
 
 Returns Twelve Data technical indicators for forex pairs. Supported indicators: `sma`, `ema`, `rsi`, `macd`, `bbands`, `atr`, `adx`, `stoch`.
+
+`get_crypto_prices`
+
+Returns current crypto prices from CoinGecko using the authenticated user's CoinGecko key.
+
+`get_crypto_markets`
+
+Returns CoinGecko market rankings, market caps, prices, and volume.
+
+`get_crypto_market_chart`
+
+Returns CoinGecko historical market chart data for a coin ID.
+
+`get_crypto_trending`
+
+Returns trending crypto assets from CoinGecko.
+
+`get_binance_ticker`
+
+Returns public Binance ticker data through CCXT. This does not require a Binance API key.
+
+`get_binance_order_book`
+
+Returns public Binance order book data through CCXT. This does not require a Binance API key.
+
+`get_binance_klines`
+
+Returns public Binance OHLCV candles through CCXT. This does not require a Binance API key.
+
+`get_binance_24h_stats`
+
+Returns public Binance 24h ticker stats through CCXT.
+
+`get_crypto_news`
+
+Returns CryptoPanic news using the authenticated user's CryptoPanic key.
+
+`ask_messari_research`
+
+Sends a natural-language crypto research question to Messari using the authenticated user's Messari key.
+
+`get_messari_timeseries_catalog`
+
+Returns the Messari timeseries dataset catalog for the authenticated user's Messari plan.
+
+`get_messari_timeseries`
+
+Returns Messari timeseries data for an asset, market, exchange, or network when the user's Messari plan allows it.
+
+## Market Data Providers
+
+Dashboard provider keys are stored at `users/{userId}/data_provider_connections/{provider}` and accessed only through backend API routes under `/api/mcp/data-providers/*`.
+
+Supported providers:
+
+- OANDA: `apiKey`, `accountId`, `baseUrl`
+- Twelve Data: `apiKey`, `baseUrl`
+- CoinGecko: `apiKey`, `tier` (`demo` or `pro`)
+- CryptoPanic: `apiKey`, `apiPlan`
+- Messari: `apiKey`
+
+CoinGecko and Messari hosted MCP options were reviewed, but Trade MCP uses dashboard-owned BYOK credentials so all analytics tools share one OAuth-protected MCP endpoint.

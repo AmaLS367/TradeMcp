@@ -23,6 +23,22 @@
       },
       "required": ["provider", "apiKeyEncrypted", "apiSecretEncrypted", "isActive", "createdAt"]
     },
+    "DataProviderConnection": {
+      "title": "Data Provider Connection",
+      "description": "User-owned market data provider credentials (encrypted, backend-only).",
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string", "enum": ["oanda", "twelve_data", "coingecko", "cryptopanic", "messari"] },
+        "encryptedFields": { "type": "object" },
+        "config": { "type": "object" },
+        "apiKeyPreview": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "lastValidatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["provider", "encryptedFields", "config", "apiKeyPreview", "isActive", "createdAt", "updatedAt"]
+    },
     "Policy": {
       "title": "Trading Policy",
       "description": "User-defined limits for AI trading.",
@@ -77,6 +93,10 @@
     "/users/{userId}/exchange_connections/{connectionId}": {
       "schema": { "$ref": "#/entities/ExchangeConnection" },
       "description": "User's connected exchanges"
+    },
+    "/users/{userId}/data_provider_connections/{providerId}": {
+      "schema": { "$ref": "#/entities/DataProviderConnection" },
+      "description": "User-owned market data provider credentials; accessed through backend API only"
     },
     "/users/{userId}/policies/{policyId}": {
       "schema": { "$ref": "#/entities/Policy" },
