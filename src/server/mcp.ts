@@ -391,10 +391,12 @@ const resourceMetadataUrl = new URL('/api/mcp/.well-known/oauth-protected-resour
 const SUPPORTED_PROVIDERS = ['binance', 'bybit'] as const;
 const MAX_TOOL_RESPONSE_CHARS = 60_000;
 export const MARKET_DATA_MCP_TOOL_NAMES = ['get_fx_quote', 'get_fx_candles', 'get_technical_indicator'] as const;
+export const RAW_EXCHANGE_MCP_TOOL_NAMES = ['list_exchange_methods', 'call_exchange_method'] as const;
 
 const SAFE_RESEARCH_TOOL_NAMES = new Set([
     ...MARKET_DATA_MCP_TOOL_NAMES,
     ...CRYPTO_ANALYSIS_MCP_TOOL_NAMES,
+    ...RAW_EXCHANGE_MCP_TOOL_NAMES,
     'search',
     'fetch',
 ]);
@@ -405,7 +407,8 @@ const TRADING_REVIEW_TOOL_NAMES = new Set([
     'create_trade_proposal',
 ]);
 
-function shouldIncludeTool(name: string, profile?: string): boolean {
+export function shouldIncludeTool(name: string, profile?: string): boolean {
+    if ((RAW_EXCHANGE_MCP_TOOL_NAMES as readonly string[]).includes(name)) return true;
     if (!profile || profile === 'full_access') return true;
     if (profile === 'trading_review') return TRADING_REVIEW_TOOL_NAMES.has(name);
     if (profile === 'safe_research') return SAFE_RESEARCH_TOOL_NAMES.has(name);
@@ -671,7 +674,7 @@ function createMcpServer(userId: string | null, profile?: string) {
         capabilities: {
             tools: {}
         },
-        instructions: "Trade MCP exposes market data, crypto research, exchange account reads, and human-approved trade proposal tools for the authenticated dashboard user. Prefer read-only analysis tools for research questions. Use create_trade_proposal only when the user asks to prepare a trade for dashboard approval. Use call_exchange_method only when the user explicitly names a CCXT method or asks for raw Binance/Bybit API access."
+        instructions: "Trade MCP exposes market data, crypto research, exchange account reads, human-approved trade proposal tools, and raw Binance/Bybit CCXT API access for the authenticated dashboard user. list_exchange_methods and call_exchange_method are available in every client profile and can call public, private, trading, transfer, and raw endpoint methods when the user's exchange connection has permissions."
     });
 
     server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -706,7 +709,7 @@ function createMcpServer(userId: string | null, profile?: string) {
                 },
                 {
                     name: "list_exchange_methods",
-                    description: "Use this to discover callable CCXT methods for Binance or Bybit before making a raw exchange call. Prefer this when the user asks what exchange API methods are available. Do not use for normal balances, market data, or trade proposals when a dedicated tool exists.",
+                    description: "Use this to discover all callable public CCXT methods exposed by the Binance or Bybit instance before making a raw exchange call. This includes unified methods and raw public/private/trading/transfer endpoint methods available to the user's API key.",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -723,12 +726,12 @@ function createMcpServer(userId: string | null, profile?: string) {
                 },
                 {
                     name: "call_exchange_method",
-                    description: "Use this only when the user explicitly requests a specific CCXT method or raw Binance/Bybit API call. This can access public, private, trading, transfer, and raw exchange methods on the user's connection. Prefer dedicated read-only tools and create_trade_proposal for normal workflows.",
+                    description: "Call any public callable CCXT method on Binance or Bybit, including public, private, trading, transfer, and raw endpoint methods. The call uses the authenticated user's active exchange connection and whatever permissions that API key has.",
                     inputSchema: {
                         type: "object",
                         properties: {
                             provider: { type: "string", enum: ["binance", "bybit"] },
-                            method: { type: "string", description: "Exact CCXT method name, for example fetchTicker, fetchOpenOrders, privateGetAccount. Avoid trading methods unless explicitly requested." },
+                            method: { type: "string", description: "Exact CCXT method name, for example fetchTicker, fetchOpenOrders, privateGetAccount, privatePostOrder, or another method returned by list_exchange_methods." },
                             args: {
                                 type: "array",
                                 description: "Positional arguments passed directly to the CCXT method.",

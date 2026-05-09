@@ -30,20 +30,20 @@ const PROFILES: { id: Profile; label: string; description: string; tools: string
   {
     id: 'safe_research',
     label: 'Safe Research',
-    description: 'Market data, prices, news, and research only. No exchange access.',
-    tools: 'CoinGecko · Binance public · CryptoPanic · Messari · FX data · search · fetch',
+    description: 'Market data, prices, news, research, and raw Binance/Bybit API access.',
+    tools: 'CoinGecko · Binance public · CryptoPanic · Messari · FX data · search · fetch · list_exchange_methods · call_exchange_method',
   },
   {
     id: 'trading_review',
     label: 'Trading Review',
-    description: 'Research tools + account balances + trade proposals awaiting human approval.',
+    description: 'Research tools + raw exchange API access + account balances + trade proposals.',
     tools: 'All safe_research tools · get_account_summary · create_trade_proposal',
   },
   {
     id: 'full_access',
     label: 'Full Access',
-    description: 'Everything including raw CCXT exchange method calls.',
-    tools: 'All trading_review tools · list_exchange_methods · call_exchange_method',
+    description: 'Everything, with raw Binance/Bybit CCXT exchange methods enabled.',
+    tools: 'All trading_review tools · every enabled MCP marketplace tool',
   },
 ];
 

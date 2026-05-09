@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { encrypt, decrypt, sanitizeFirestoreData } from './mcp';
+import { encrypt, decrypt, RAW_EXCHANGE_MCP_TOOL_NAMES, sanitizeFirestoreData, shouldIncludeTool } from './mcp';
 
 // Mock process.env
 const ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -66,5 +66,15 @@ describe('Firestore sanitization', () => {
       },
       untouched: null,
     });
+  });
+});
+
+describe('MCP profile tool visibility', () => {
+  it('exposes raw Binance/Bybit exchange methods in every profile', () => {
+    for (const toolName of RAW_EXCHANGE_MCP_TOOL_NAMES) {
+      expect(shouldIncludeTool(toolName, 'safe_research')).toBe(true);
+      expect(shouldIncludeTool(toolName, 'trading_review')).toBe(true);
+      expect(shouldIncludeTool(toolName, 'full_access')).toBe(true);
+    }
   });
 });
