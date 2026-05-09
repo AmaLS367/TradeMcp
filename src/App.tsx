@@ -4,7 +4,7 @@ import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut 
 import { auth, db } from './firebase';
 import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/card';
-import { collection, query, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
@@ -1104,7 +1104,7 @@ function ProposalsList({ user }: { user: User }) {
       try {
           await updateDoc(doc(db, `users/${user.uid}/trade_proposals`, id), {
               status,
-              approvedAt: new Date().toISOString()
+              approvedAt: serverTimestamp()
           });
           toast.success(`Proposal ${status === 'approved' ? 'sent to execution' : 'cancelled'}`);
       } catch (err) { handleFirestoreError(err, OperationType.UPDATE, 'trade_proposals'); }
