@@ -34,7 +34,9 @@ import {
   Database,
   KeyRound,
   RefreshCw,
-  Webhook
+  Webhook,
+  Bitcoin,
+  ChartNoAxesColumnIncreasing
 } from 'lucide-react';
 
 enum OperationType {
@@ -421,6 +423,17 @@ const DATA_PROVIDER_CONFIGS = [
 type DataProviderConfig = typeof DATA_PROVIDER_CONFIGS[number];
 type ProviderFormState = Record<string, any>;
 
+const MCP_MARKET_UI: Record<string, { icon: any; accent: string }> = {
+  crypto_com: {
+    icon: Bitcoin,
+    accent: 'bg-orange-500/10 text-orange-500',
+  },
+  coingecko_public: {
+    icon: ChartNoAxesColumnIncreasing,
+    accent: 'bg-green-500/10 text-green-500',
+  },
+};
+
 function McpMarket({ user }: { user: User }) {
   const [servers, setServers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -522,13 +535,18 @@ function McpMarket({ user }: { user: User }) {
         ) : (
           servers.map((server) => {
             const busy = busyServer === server.id;
+            const ui = MCP_MARKET_UI[server.id] || {
+              icon: Webhook,
+              accent: 'bg-emerald-500/10 text-emerald-500',
+            };
+            const ServerIcon = ui.icon;
             return (
               <Card key={server.id} className={`glass-card border-none ${!server.isEnabled ? 'opacity-90' : ''}`}>
                 <CardHeader>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500">
-                        <Webhook size={20} />
+                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${ui.accent}`}>
+                        <ServerIcon size={20} />
                       </div>
                       <div>
                         <CardTitle className="text-lg">{server.name}</CardTitle>
