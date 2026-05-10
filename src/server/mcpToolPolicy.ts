@@ -1,7 +1,7 @@
 import { CRYPTO_ANALYSIS_MCP_TOOL_NAMES } from './cryptoAnalysis.js';
 import { TRADEMCP_DOCS_TOOL_NAME } from './tradeMcpResearchGuide.js';
 
-export const MARKET_DATA_MCP_TOOL_NAMES = ['get_fx_quote', 'get_fx_candles', 'get_technical_indicator'] as const;
+export const MARKET_DATA_MCP_TOOL_NAMES = ['get_fx_quote', 'get_fx_candles', 'get_technical_indicator', 'get_technical_indicator_catalog'] as const;
 export const RAW_EXCHANGE_MCP_TOOL_NAMES = ['list_exchange_methods', 'call_exchange_method'] as const;
 export const OBSERVABILITY_MCP_TOOL_NAMES = ['get_observability_metrics', 'get_observability_alerts'] as const;
 

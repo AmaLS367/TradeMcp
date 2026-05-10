@@ -2,7 +2,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { ListToolsRequestSchema, CallToolRequestSchema, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import admin from 'firebase-admin';
 import { logger } from './logger.js';
-import { getFxCandles, getFxQuote, getTechnicalIndicator, SUPPORTED_TWELVE_INDICATORS } from './marketData.js';
+import { getFxCandles, getFxQuote, getTechnicalIndicator, getTechnicalIndicatorCatalog, SUPPORTED_TWELVE_INDICATORS } from './marketData.js';
 import { withLatencyContext, getAccumulatedProviderLatency } from './providerLatency.js';
 import type { ClientType } from './observability.js';
 import { logToolCall, checkAlertConditions, getToolMetrics, getActiveAlerts } from './observability.js';
@@ -221,7 +221,7 @@ const BINANCE_TOOLS = new Set(['get_binance_ticker', 'get_binance_order_book', '
 const CRYPTOPANIC_TOOLS = new Set(['get_crypto_news']);
 const MESSARI_TOOLS = new Set(['ask_messari_research', 'get_messari_timeseries_catalog', 'get_messari_timeseries']);
 const NEWSAPI_TOOLS = new Set(['search_newsapi_articles', 'get_newsapi_top_headlines', 'get_newsapi_sources']);
-const MARKETDATA_TOOLS = new Set(['get_fx_quote', 'get_fx_candles', 'get_technical_indicator']);
+const MARKETDATA_TOOLS = new Set<string>([...MARKET_DATA_MCP_TOOL_NAMES]);
 const OBSERVABILITY_TOOLS = new Set<string>([...OBSERVABILITY_MCP_TOOL_NAMES]);
 const NATIVE_TOOLS = new Set(['search', 'fetch', 'create_trade_proposal', 'list_exchange_methods', 'call_exchange_method', 'get_account_summary', ...OBSERVABILITY_MCP_TOOL_NAMES]);
 
@@ -427,6 +427,17 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                             outputsize: { type: "number", description: "Optional number of values to return, capped at 5000." }
                         },
                         required: ["symbol", "indicator", "interval"]
+                    },
+                    annotations: {
+                        readOnlyHint: true,
+                    },
+                },
+                {
+                    name: MARKET_DATA_MCP_TOOL_NAMES[3],
+                    description: "Use this before answering questions about available technical indicators, especially RSI, MACD, SMA, EMA, Bollinger Bands, ATR, ADX, or stochastic. Returns TradeMCP's indicator catalog, required provider keys, accepted params, and routing rules for forex and crypto TA.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {},
                     },
                     annotations: {
                         readOnlyHint: true,
@@ -941,6 +952,17 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                     type: "text",
                     text: trimToolText(safeJson(result))
                 }]
+            };
+        }
+
+        if (name === MARKET_DATA_MCP_TOOL_NAMES[3]) {
+            const catalog = getTechnicalIndicatorCatalog();
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(catalog))
+                }],
+                structuredContent: { data: catalog },
             };
         }
 

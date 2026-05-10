@@ -69,6 +69,7 @@
 |-----------|---------------------|
 | `get_fx_quote`, `get_fx_candles` | OANDA or Twelve Data |
 | `get_technical_indicator` | Twelve Data |
+| `get_technical_indicator_catalog` | No key required |
 | `get_crypto_prices`, `get_crypto_markets`, `get_crypto_market_chart`, `get_crypto_trending` | CoinGecko |
 | `get_crypto_news` | CryptoPanic |
 | `search_newsapi_articles`, `get_newsapi_top_headlines`, `get_newsapi_sources` | NewsAPI |

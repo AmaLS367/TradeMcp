@@ -59,6 +59,7 @@
 | **`get_fx_quote`** | Real-time FX spot rate for pairs like `EUR/USD` |
 | **`get_fx_candles`** | Historical FX OHLCV candles |
 | **`get_technical_indicator`** | SMA, EMA, RSI, MACD, Bollinger Bands, ATR, ADX, Stoch |
+| **`get_technical_indicator_catalog`** | Indicator catalog and routing rules for RSI/MACD-style requests |
 
 > 🔑 Requires OANDA or Twelve Data API keys in dashboard **Data Providers**.
 

@@ -93,6 +93,45 @@ export type TechnicalIndicatorArgs = {
   outputsize?: unknown;
 };
 
+export function getTechnicalIndicatorCatalog() {
+  const indicators = [
+    { id: 'sma', label: 'Simple Moving Average', commonParams: ['time_period', 'series_type'] },
+    { id: 'ema', label: 'Exponential Moving Average', commonParams: ['time_period', 'series_type'] },
+    { id: 'rsi', label: 'Relative Strength Index', commonParams: ['time_period', 'series_type'] },
+    { id: 'macd', label: 'Moving Average Convergence Divergence', commonParams: ['series_type'] },
+    { id: 'bbands', label: 'Bollinger Bands', commonParams: ['time_period', 'series_type'] },
+    { id: 'atr', label: 'Average True Range', commonParams: ['time_period'] },
+    { id: 'adx', label: 'Average Directional Index', commonParams: ['time_period'] },
+    { id: 'stoch', label: 'Stochastic Oscillator', commonParams: [] },
+  ];
+
+  return {
+    tools: {
+      get_technical_indicator: {
+        provider: 'twelve',
+        requiredDataProvider: 'twelve_data',
+        assetClass: 'forex',
+        symbolFormat: 'EUR/USD, EUR_USD, or EURUSD',
+        requiredParams: ['symbol', 'indicator', 'interval'],
+        optionalParams: ['time_period', 'series_type', 'outputsize'],
+        intervals: ['1min', '5min', '15min', '30min', '1h', '4h', '1day', '1week'],
+        indicators,
+      },
+      get_binance_klines: {
+        provider: 'binance',
+        assetClass: 'crypto',
+        symbolFormat: 'BASE/QUOTE, for example BTC/USDT',
+        note: 'Use this for crypto OHLCV. Compute RSI, MACD, EMA, SMA, Bollinger Bands, ATR, ADX, or stochastic from returned candles when no dedicated crypto indicator tool is available.',
+      },
+    },
+    routing: [
+      'For forex RSI, MACD, SMA, EMA, Bollinger Bands, ATR, ADX, or stochastic, call get_technical_indicator with a Twelve Data key.',
+      'For crypto RSI or MACD requests, fetch candles with get_binance_klines first and compute the indicator from OHLCV unless the user asks for raw exchange methods.',
+      'For current crypto price, liquidity, spread, or volume context, combine get_binance_ticker, get_binance_24h_stats, and get_binance_order_book.',
+    ],
+  };
+}
+
 export function normalizeFxSymbol(symbol: unknown) {
   if (typeof symbol !== 'string') {
     throw new Error('symbol must be a forex pair string');

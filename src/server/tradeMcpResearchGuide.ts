@@ -23,6 +23,7 @@ export function getTradeMcpResearchGuide(topic: unknown) {
           'get_binance_order_book',
           'get_binance_klines',
           'get_binance_24h_stats',
+          'get_technical_indicator_catalog',
           'coingecko_public__*',
           'crypto_com__*',
         ],
@@ -49,7 +50,7 @@ export function getTradeMcpResearchGuide(topic: unknown) {
         'fundamental research / tokenomics': 'ask_messari_research then get_messari_timeseries',
         'forex quote / FX price': 'get_fx_quote',
         'forex chart / FX candles': 'get_fx_candles',
-        'technical indicator (SMA/RSI/MACD)': 'get_technical_indicator',
+        'technical indicator (SMA/RSI/MACD)': 'get_technical_indicator_catalog first, then get_technical_indicator for forex or get_binance_klines for crypto candles',
         'search assets / discovery': 'search',
         'fetch URL / read web page': 'fetch',
         'exchange balance / portfolio': 'get_account_summary',
@@ -113,6 +114,7 @@ export function getTradeMcpResearchGuide(topic: unknown) {
       workflow: [
         'Normalize the requested exchange symbol, usually TICKER/USDT for Binance unless the user specifies another market.',
         'Fetch current ticker and 24h stats for last price, high/low, change, and quote volume.',
+        'Call get_technical_indicator_catalog before using named indicators such as RSI, MACD, EMA, SMA, Bollinger Bands, ATR, ADX, or stochastic.',
         'Fetch candles for the requested timeframe and one higher timeframe. If no timeframe is specified, use 1h and 1d as defaults.',
         'Use order book data for spread, near-touch depth, and obvious liquidity walls.',
         'Use raw CCXT only when built-in Binance helpers cannot answer the question, and prefer public read-only methods for research.',
@@ -121,6 +123,7 @@ export function getTradeMcpResearchGuide(topic: unknown) {
       recommendedToolsInOrder: [
         'get_binance_ticker',
         'get_binance_24h_stats',
+        'get_technical_indicator_catalog',
         'get_binance_klines',
         'get_binance_order_book',
         'list_exchange_methods and call_exchange_method only for missing public CCXT data',

@@ -4,6 +4,7 @@ import {
   buildOandaQuoteRequest,
   buildTwelveIndicatorRequest,
   getFxQuote,
+  getTechnicalIndicatorCatalog,
   normalizeFxSymbol,
 } from './marketData';
 import { MARKET_DATA_MCP_TOOL_NAMES } from './mcp';
@@ -89,6 +90,25 @@ describe('market data helpers', () => {
       'get_fx_quote',
       'get_fx_candles',
       'get_technical_indicator',
+      'get_technical_indicator_catalog',
     ]);
+  });
+
+  it('exposes a technical indicator catalog for MCP clients', () => {
+    expect(getTechnicalIndicatorCatalog()).toMatchObject({
+      tools: {
+        get_technical_indicator: {
+          provider: 'twelve',
+          assetClass: 'forex',
+          indicators: expect.arrayContaining([
+            expect.objectContaining({ id: 'rsi', label: 'Relative Strength Index' }),
+            expect.objectContaining({ id: 'macd', label: 'Moving Average Convergence Divergence' }),
+          ]),
+        },
+      },
+      routing: expect.arrayContaining([
+        expect.stringContaining('get_technical_indicator'),
+      ]),
+    });
   });
 });
