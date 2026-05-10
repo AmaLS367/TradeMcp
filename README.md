@@ -8,7 +8,7 @@
 
 ## ⚡ Quick Start
 
-**🌍 MCP URL:** `https://vmi3245942.contaboserver.net/api/mcp/`
+**🌍 MCP URL:** `http://localhost:3000/api/mcp/`
 
 | Step | Action                                                |
 | ---- | ----------------------------------------------------- |

@@ -1,7 +1,6 @@
 # Trade MCP TODOs
 
-## AI Client Connections - выполнено
-
+## AI Client Connections
 - Add a dedicated "Connect AI Clients" dashboard section for ChatGPT, Claude, Gemini CLI, Cursor, and other MCP clients.
 - Provide copy-ready client configuration snippets for each supported AI client.
 - Add client-specific setup checks so users can confirm OAuth and MCP discovery work before using an agent.
@@ -51,8 +50,7 @@
 - Add better mobile layout for dense provider and marketplace cards.
 - Add a user-facing activity timeline.
 
-## Observability - выполнено
-
+## Observability
 - Log MCP tool calls with user id, client type, tool name, latency, and result status.
 - Detect client type from headers where possible.
 - Add dashboard metrics for tool usage and failures.
