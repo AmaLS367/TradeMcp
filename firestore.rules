@@ -101,12 +101,12 @@ service cloud.firestore {
       }
 
       match /tool_calls/{doc} {
-        allow read, write: if isVerified() && request.auth.uid == userId;
+        allow read: if isVerified() && request.auth.uid == userId;
       }
 
       match /order_events/{doc} {
         allow read: if isVerified() && request.auth.uid == userId;
-        allow create: if isVerified();
+        allow create: if isVerified() && request.auth.uid == request.resource.data.userId;
       }
     }
 
