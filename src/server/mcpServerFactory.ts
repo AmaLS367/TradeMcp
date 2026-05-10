@@ -821,11 +821,11 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
 
         if (name === OBSERVABILITY_MCP_TOOL_NAMES[0]) {
             if (!userId) {
-                throw new Error('Observability metrics require authentication. Connect via OAuth or use an API key from the dashboard → Settings → API Keys.');
+                return { content: [{ type: "text", text: "Observability metrics require authentication. Connect via OAuth or use an API key from the dashboard → Settings → API Keys." }], isError: true };
             }
             const since = typeof args?.since === 'string' ? new Date(args.since) : undefined;
             if (since && Number.isNaN(since.getTime())) {
-                throw new Error('since must be a valid ISO timestamp');
+                return { content: [{ type: "text", text: "since must be a valid ISO timestamp, for example 2026-01-01T00:00:00Z" }], isError: true };
             }
             const metrics = await getToolMetrics(userId, since);
             return {
@@ -836,7 +836,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
 
         if (name === OBSERVABILITY_MCP_TOOL_NAMES[1]) {
             if (!userId) {
-                throw new Error('Observability alerts require authentication. Connect via OAuth or use an API key from the dashboard → Settings → API Keys.');
+                return { content: [{ type: "text", text: "Observability alerts require authentication. Connect via OAuth or use an API key from the dashboard → Settings → API Keys." }], isError: true };
             }
             const alerts = await getActiveAlerts(userId);
             return {
