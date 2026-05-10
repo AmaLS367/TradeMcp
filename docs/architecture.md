@@ -51,7 +51,7 @@
 | **CoinGecko** | 📈 Crypto prices, markets, charts, trending | `apiKey`, `tier` (demo/pro) |
 | **CryptoPanic** | 📰 Crypto news with sentiment | `apiKey`, `apiPlan` |
 | **Messari** | 🔬 Fundamental research, timeseries data | `apiKey` |
-| **Dune** | ⛓️ On-chain analytics | `apiKey` |
+| **Dune** | ⛓️ On-chain analytics (via MCP Market) | API key in Data Providers → MCP Market |
 
 **🔐 Security:** Keys are encrypted with AES-256-GCM before storage and decrypted server-side only when making API calls.
 
@@ -71,6 +71,7 @@
 |--------|----------|---------|
 | **Crypto.com** | Market data (order book, trades, candles) | ![Auth](https://img.shields.io/badge/Auth-None-brightgreen) |
 | **CoinGecko Public** | Public crypto data (no BYOK needed) | ![Auth](https://img.shields.io/badge/Auth-None-brightgreen) |
+| **Dune** | On-chain analytics, custom queries | ![Auth](https://img.shields.io/badge/Auth-Dune_Key-blue) |
 
 **How it works:**
 1. You enable a server in the dashboard

@@ -127,7 +127,10 @@ describe('MCP marketplace proxy helpers', () => {
       })),
     }));
 
-    await expect(listMarketplaceToolsForServerIds([], factory)).resolves.toEqual([]);
+    await expect(listMarketplaceToolsForServerIds(['dune'], factory, async () => ({ apiKey: 'dune-key' }))).resolves.toMatchObject([
+      { name: 'dune__auth-dune-key' },
+    ]);
+    expect(factory).toHaveBeenCalledWith(MCP_MARKETPLACE_SERVERS.dune, { apiKey: 'dune-key' });
   });
 
   it('keeps listing other enabled servers when one upstream server fails', async () => {

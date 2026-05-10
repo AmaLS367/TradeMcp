@@ -72,6 +72,7 @@
 | `get_crypto_prices`, `get_crypto_markets`, `get_crypto_market_chart`, `get_crypto_trending` | CoinGecko |
 | `get_crypto_news` | CryptoPanic |
 | `ask_messari_research`, `get_messari_timeseries_catalog`, `get_messari_timeseries` | Messari |
+| `dune__*` marketplace tools | Dune API key in Data Providers + enabled in MCP Market |
 
 > 🔒 Keys are stored encrypted with AES-256-GCM.
 

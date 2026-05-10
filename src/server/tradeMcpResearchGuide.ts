@@ -30,6 +30,7 @@ export function getTradeMcpResearchGuide(topic: unknown) {
           'ask_messari_research',
           'get_messari_timeseries_catalog',
           'get_messari_timeseries',
+          'dune__*',
         ],
         discoveryAndNews: ['search', 'fetch', 'get_crypto_news'],
         rawExchange: ['list_exchange_methods', 'call_exchange_method'],
