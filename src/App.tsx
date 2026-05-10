@@ -1264,6 +1264,14 @@ function ProposalsList({ user }: { user: User }) {
                                     </div>
                                   </div>
                                 )}
+                                {p.params && typeof p.params === 'object' && Object.keys(p.params).length > 0 && (
+                                  <div className="p-4 bg-muted/30 rounded-2xl border border-border/10 col-span-2">
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Raw Params</p>
+                                    <pre className="text-xs font-mono whitespace-pre-wrap break-words text-muted-foreground">
+                                      {JSON.stringify(p.params, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
                             </div>
 
                             <div className="space-y-2">

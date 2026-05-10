@@ -35,6 +35,7 @@ import {
 } from './mcpCredentials.js';
 import { FirebaseOAuthProvider } from './mcpOAuthProvider.js';
 import { createMcpServer } from './mcpServerFactory.js';
+import { buildCreateOrderRequest } from './mcpExchange.js';
 
 export { ALGORITHM, decrypt, encrypt, getEncryptionKey } from './mcpCrypto.js';
 export { sanitizeFirestoreData } from './firestoreUtils.js';
@@ -806,14 +807,25 @@ db.collectionGroup('trade_proposals')
                         secret: decrypt(connData.apiSecretEncrypted),
                     });
 
-                    let order;
-                    if (data.orderType === 'market') {
-                        order = await exchange.createMarketOrder(data.symbol, data.side, data.quantity);
-                    } else if (data.orderType === 'limit' && data.price) {
-                        order = await exchange.createLimitOrder(data.symbol, data.side, data.quantity, data.price);
-                    } else {
-                        throw new Error('Invalid order type or missing price');
-                    }
+                    const orderRequest = buildCreateOrderRequest({
+                        provider: data.provider,
+                        symbol: data.symbol,
+                        side: data.side,
+                        orderType: data.orderType,
+                        quantity: data.quantity,
+                        price: data.price,
+                        stopLoss: data.stopLoss,
+                        takeProfit: data.takeProfit,
+                        params: data.params,
+                    });
+                    const order = await exchange.createOrder(
+                        orderRequest.symbol,
+                        orderRequest.type,
+                        orderRequest.side,
+                        orderRequest.amount,
+                        orderRequest.price,
+                        orderRequest.params
+                    );
 
                     await doc.ref.update({
                         status: 'executed',

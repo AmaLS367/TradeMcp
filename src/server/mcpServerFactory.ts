@@ -289,6 +289,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                             price: { type: "number", description: "Limit price in quote currency. Required only for limit orders." },
                             stopLoss: { type: "number", description: "Optional stop-loss trigger price in quote currency. Use only when the user explicitly provides or asks for a stop-loss." },
                             takeProfit: { type: "number", description: "Optional take-profit trigger price in quote currency. Use only when the user explicitly provides or asks for a take-profit." },
+                            params: { type: "object", description: "Optional raw CCXT createOrder params forwarded with the approved order, for exchange-specific fields such as category, timeInForce, reduceOnly, trigger settings, TP/SL modes, or clientOrderId.", additionalProperties: true },
                             rationale: { type: "string", description: "Short user-facing reason for the proposal, including key market context or risk note." }
                         },
                         required: ["provider", "symbol", "side", "orderType", "quantity", "rationale"]

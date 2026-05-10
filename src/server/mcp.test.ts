@@ -9,6 +9,7 @@ import {
   shouldIncludeTool,
   TRADEMCP_DOCS_TOOL_NAME,
 } from './mcp';
+import { buildCreateOrderRequest } from './mcpExchange';
 
 // Mock process.env
 const ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -101,13 +102,57 @@ describe('MCP profile tool visibility', () => {
   });
 });
 
+describe('exchange order request builder', () => {
+  it('passes Bybit stop-loss and take-profit proposal fields as createOrder params', () => {
+    expect(buildCreateOrderRequest({
+      provider: 'bybit',
+      symbol: 'BTC/USDT',
+      side: 'buy',
+      orderType: 'limit',
+      quantity: 0.01,
+      price: 95000,
+      stopLoss: 92500,
+      takeProfit: 99000,
+    })).toEqual({
+      symbol: 'BTC/USDT',
+      type: 'limit',
+      side: 'buy',
+      amount: 0.01,
+      price: 95000,
+      params: {
+        stopLoss: 92500,
+        takeProfit: 99000,
+      },
+    });
+  });
+
+  it('passes raw proposal params through to createOrder', () => {
+    expect(buildCreateOrderRequest({
+      provider: 'bybit',
+      symbol: 'ETH/USDT',
+      side: 'sell',
+      orderType: 'market',
+      quantity: 0.5,
+      params: {
+        category: 'linear',
+        timeInForce: 'IOC',
+        reduceOnly: true,
+      },
+    } as any).params).toEqual({
+      category: 'linear',
+      timeInForce: 'IOC',
+      reduceOnly: true,
+    });
+  });
+});
+
 describe('TradeMCP research guide', () => {
   it('documents fundamental-analysis source priority and data-gap rules', () => {
     expect(getTradeMcpResearchGuide('fundamental_crypto')).toMatchObject({
       role: expect.stringContaining('fundamental analyst'),
       recommendedToolsInOrder: expect.arrayContaining([
         expect.stringContaining('get_crypto_markets'),
-        expect.stringContaining('dune__'),
+        expect.stringContaining('ask_messari_research'),
       ]),
       outputFormat: {
         thesis: expect.any(String),

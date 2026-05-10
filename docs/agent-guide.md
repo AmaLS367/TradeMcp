@@ -24,7 +24,7 @@
 
 ![Auth](https://img.shields.io/badge/Auth-OAuth_|_API_Key-orange) ![Danger](https://img.shields.io/badge/Danger-Human_Approval_Required-red)
 
-**`create_trade_proposal`** — Stages a trade for human approval in the dashboard. Never executes directly. Requires: `provider`, `symbol`, `side`, `orderType`, `quantity`, `rationale`.
+**`create_trade_proposal`** — Stages a trade for human approval in the dashboard. Never executes directly. Requires: `provider`, `symbol`, `side`, `orderType`, `quantity`, `rationale`. Optional Bybit/CCXT order fields such as `stopLoss`, `takeProfit`, and raw `params` are forwarded to `createOrder` after approval.
 
 ---
 

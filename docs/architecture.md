@@ -23,7 +23,7 @@
 
 **Uses:**
 - 💰 `get_account_summary` — Read balances
-- 📝 `create_trade_proposal` — Stage trades
+- 📝 `create_trade_proposal` — Stage trades, including approved CCXT order `params`
 - 🔌 `list_exchange_methods` / `call_exchange_method` — Raw API access
 
 **Validation:** Keys are tested against the exchange before saving. Binance uses `GET /api/v3/account`, Bybit uses `GET /v5/account/wallet-balance`.
