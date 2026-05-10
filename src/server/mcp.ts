@@ -760,9 +760,15 @@ db.collectionGroup('trade_proposals')
                 if (!userId) continue;
 
                 try {
-                    await doc.ref.update({
-                        status: 'executing',
-                        executionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    await db.runTransaction(async (transaction) => {
+                        const freshSnap = await transaction.get(doc.ref);
+                        if (!freshSnap.exists || freshSnap.data()?.status !== 'approved') {
+                            throw new Error('Proposal already claimed by another instance');
+                        }
+                        transaction.update(doc.ref, {
+                            status: 'executing',
+                            executionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        });
                     });
 
                     recordOrderEvent({
@@ -778,7 +784,7 @@ db.collectionGroup('trade_proposals')
                         status: 'executing',
                     });
                 } catch (claimErr: any) {
-                    logger.error(claimErr, "Failed to claim proposal, skipping:");
+                    logger.warn(claimErr, "Failed to claim proposal (possibly already claimed), skipping:");
                     continue;
                 }
 
