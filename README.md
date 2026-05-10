@@ -1,47 +1,57 @@
-# Trade MCP
+# 🚀 Trade MCP
 
-Remote MCP server for crypto exchange balances and human-approved trade proposals.
+> 🌐 Remote MCP server for crypto exchange balances and human-approved trade proposals.
 
-## Quick Start
+![Status](https://img.shields.io/badge/Status-Active-brightgreen) ![Version](https://img.shields.io/badge/Version-1.1.0-blue)
 
-**MCP URL:** `https://vmi3245942.contaboserver.net/api/mcp/`
+---
 
-1. Open the web dashboard and sign in with Google
-2. Go to **Settings & MCP**
-3. Use the URL above with any MCP client — authentication is OAuth
+## ⚡ Quick Start
 
-## Run Locally
+**🌍 MCP URL:** `https://vmi3245942.contaboserver.net/api/mcp/`
+
+| Step | Action |
+|------|--------|
+| 1 | Open the web dashboard and sign in with Google |
+| 2 | Go to **Settings & MCP** |
+| 3 | Use the URL above — authentication is **OAuth** |
+
+---
+
+## 💻 Run Locally
 
 ```bash
-# Create .env from .env.example
-# Required: ENCRYPTION_KEY, FIREBASE_SERVICE_ACCOUNT_KEY
-# Generate ENCRYPTION_KEY:
-#   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-
+# 📦 Install
 npm install
-npm run dev      # development
-npm run build && npm start   # production
-```
 
-Docker:
+# 🔧 Development
+npm run dev
 
-```bash
+# 🏭 Production
+npm run build && npm start
+
+# 🐳 Docker
 docker compose up -d --build
 ```
 
-## Documentation
+### ⚙️ Environment
 
-| File | What it covers |
-|------|----------------|
-| [docs/agent-guide.md](docs/agent-guide.md) | All MCP tools by group, when to use each, examples |
-| [docs/client-setup.md](docs/client-setup.md) | Setup guides for ChatGPT, Claude, Gemini CLI, Cursor |
-| [docs/architecture.md](docs/architecture.md) | Exchange Connections vs Data Providers vs MCP Market |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | OAuth, Firebase rules, provider keys, upstream failures |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ENCRYPTION_KEY` | ✅ Yes | 64-char hex — generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `FIREBASE_SERVICE_ACCOUNT_KEY` | ✅ Yes | Firebase Admin SDK service account JSON |
+| `PORT` | ❌ No | Server port (default `3000`) |
+| `PUBLIC_BASE_URL` | ❌ No | Public URL — required in production for OAuth |
 
-## Environment
+> 📌 Market data provider keys (OANDA, Twelve Data, CoinGecko, CryptoPanic, Messari) are configured in the dashboard under **Market Data Providers**. They are encrypted per user.
 
-Required: `ENCRYPTION_KEY`, `FIREBASE_SERVICE_ACCOUNT_KEY`
+---
 
-Optional: `PORT` (default 3000), `PUBLIC_BASE_URL`, `VITE_PUBLIC_BASE_URL`
+## 📚 Documentation
 
-Market data provider keys (OANDA, Twelve Data, CoinGecko, CryptoPanic, Messari) are configured in the dashboard under **Market Data Providers**. They are encrypted per user and are not read from server environment variables.
+| 📄 File | 🎯 What it covers |
+|---------|-------------------|
+| [📖 Agent Guide](docs/agent-guide.md) | All MCP tools by group, when to use each, examples |
+| [🚀 Client Setup](docs/client-setup.md) | Setup guides for ChatGPT, Claude, Gemini CLI, Cursor |
+| [🏗️ Architecture](docs/architecture.md) | Exchange Connections vs Data Providers vs MCP Market |
+| [🔧 Troubleshooting](docs/troubleshooting.md) | OAuth, Firebase rules, provider keys, upstream failures |

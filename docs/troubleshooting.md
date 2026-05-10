@@ -1,48 +1,72 @@
-# Troubleshooting
+# 🔧 Troubleshooting
+
+> Common issues and how to fix them.
 
 ---
 
-## OAuth Issues
+## 🔑 OAuth Issues
 
-**Symptom:** Client redirects but gets stuck in a "Sign in with Google" loop.
+### 🔄 "Sign in with Google" loop
 
-**Check:**
-1. Verify `PUBLIC_BASE_URL` matches the actual deployment URL. Without it, OAuth issuer URLs are wrong and redirects fail. The server warns on startup if unset in production.
-2. In Firebase Console → Authentication → Sign-in method, confirm Google sign-in is enabled.
-3. OAuth clients are registered dynamically (no manual setup needed), but if registration fails, check that the Firebase project has Firestore initialized.
+**Symptom:** Client redirects but keeps going back to the Google login screen.
 
-**Symptom:** "Missing auth" error when calling tools.
+**✅ Fixes:**
 
-**Fix:** Provide authentication via one of these methods:
-- Connect via OAuth (recommended for ChatGPT, Claude, Cursor)
-- Generate an API key in Dashboard → Settings → API Keys, then pass it as a `Bearer` token in the `Authorization` header, or as `?key=` query parameter, or as `x-api-key` header
+1. **Check `PUBLIC_BASE_URL`** — Must match your actual deployment URL. Without it, OAuth redirect URLs are wrong.
+   ```bash
+   # Server warns on startup if unset in production:
+   WARNING: PUBLIC_BASE_URL is not set in production.
+   ```
+
+2. **Enable Google sign-in** — Firebase Console → **Authentication** → **Sign-in method** → **Google** → Enable
+
+3. **Check Firestore initialization** — OAuth clients register dynamically, but this needs Firestore to be set up
+
+### 🚫 "Missing auth" error
+
+**Symptom:** Tools return "Missing auth" or "Invalid API key".
+
+**✅ Fix:** Provide authentication via one of these methods:
+
+| Method | How |
+|--------|-----|
+| 🔗 **OAuth** | Recommended for ChatGPT, Claude, Cursor |
+| 🔑 **API Key** | Dashboard → **Settings** → **API Keys** → Generate → Pass as `Authorization: Bearer <key>` or `?key=<key>` |
+| 🏷️ **x-api-key header** | Set `x-api-key: <your-key>` on requests |
 
 ---
 
-## Firebase Rules Errors
+## 🔥 Firebase Rules Errors
 
-**Symptom:** "Missing or insufficient permissions" in the dashboard or API.
+### 🚫 "Missing or insufficient permissions"
 
-**Key rules in `firestore.rules`:**
-- `users/{userId}` — Only the owning user (`request.auth.uid == userId`) can access their own data
-- `exchange_connections` — Users can create, read, and delete. Only `isActive` can be updated from the client
-- `trade_proposals` — Users can read and approve/reject. Creation uses the Admin SDK (server-side only)
-- `data_provider_connections` — Require backend API routes, not direct client access
+**Symptom:** Dashboard or API calls fail with permission errors.
 
-**Common mistake:** Writing to `data_provider_connections` directly from the browser. This must go through the backend API (`PUT /api/mcp/data-providers/:provider`).
+**✅ Key rules (from `firestore.rules`):**
+
+| Collection | Who can access |
+|------------|----------------|
+| `users/{userId}` | 👤 Only the owning user (`request.auth.uid == userId`) |
+| `exchange_connections` | 👤 Create, read, delete own. Update only `isActive` |
+| `trade_proposals` | 👤 Read and approve/reject. Creation via Admin SDK only |
+| `data_provider_connections` | 🚫 **Not from client** — use backend API routes |
+
+> ⚠️ **Common mistake:** Writing to `data_provider_connections` from the browser. Use `PUT /api/mcp/data-providers/:provider` instead.
 
 ---
 
-## Provider Key Issues
+## 🔌 Provider Key Issues
 
-**Symptom:** Tools return "API key not configured" or "provider error".
+### ❌ "API key not configured" or "provider error"
 
-**Root cause:** The required API key was not entered in Dashboard → Market Data Providers.
+**Symptom:** Some tools work, others return errors.
+
+**✅ Fix:** Enter the required key in Dashboard → **Market Data Providers**.
 
 **Tools and their required providers:**
 
-| Tools | Required provider |
-|-------|-------------------|
+| 🛠️ Tools | 🔑 Required provider |
+|-----------|---------------------|
 | `get_fx_quote`, `get_fx_candles` | OANDA or Twelve Data |
 | `get_technical_indicator` | Twelve Data |
 | `get_crypto_prices`, `get_crypto_markets`, `get_crypto_market_chart`, `get_crypto_trending` | CoinGecko |
@@ -50,29 +74,37 @@
 | `ask_messari_research`, `get_messari_timeseries_catalog`, `get_messari_timeseries` | Messari |
 | `dune__*` marketplace tools | Dune API key in Data Providers |
 
-**Key storage:** Provider keys are stored at `users/{userId}/data_provider_connections/{provider}` and encrypted with AES-256-GCM. You manage them in the dashboard; they are never exposed to AI clients.
+> 🔒 Keys are stored encrypted with AES-256-GCM. You manage them in the dashboard; they are never exposed to AI clients.
 
 ---
 
-## Upstream MCP Failures
+## 🌐 Upstream MCP Failures
 
-**Symptom:** Marketplace tools (`crypto_com__*`, `coingecko_public__*`) return errors.
+### ❌ Marketplace tools returning errors
+
+**Symptom:** `crypto_com__*` or `coingecko_public__*` tools fail.
 
 **Possible causes:**
-- The upstream MCP server is down (Crypto.com, CoinGecko, Chainlink, Dune outage)
-- The server was disabled in Dashboard → MCP Market
-- Connection timeout (the server waits 15 seconds before giving up)
 
-**Fix:**
-1. Check the dashboard MCP Market section — each server shows a health badge, last checked time, and last error
-2. Try disabling and re-enabling the server to refresh the connection
-3. If the error persists, the upstream server may be experiencing an outage
+| Cause | 🔍 What to check |
+|-------|------------------|
+| 📡 Upstream server down | Crypto.com, CoinGecko, Chainlink, or Dune outage |
+| ⚙️ Server disabled | Dashboard → **MCP Market** → Is it toggled on? |
+| ⏱️ Connection timeout | Server waits 15 seconds before giving up |
+
+**✅ Fix:**
+1. Check the dashboard **MCP Market** section — each server shows ✅ health badge, 🕐 last checked time, ❌ last error
+2. 🔄 Try disabling and re-enabling the server to refresh the connection
+3. If it persists, the upstream server may be down
 
 ---
 
-## Still Stuck?
+## 📋 Still Stuck?
 
-Check the observability dashboard for:
-- Recent alert history (failed providers, auth errors, execution failures)
-- Tool usage metrics with error counts and latency
-- Provider-level latency tracking
+Check the **Observability dashboard** for:
+
+- 🚨 Recent alert history (failed providers, auth errors, execution failures)
+- 📊 Tool usage metrics with error counts and latency
+- ⏱️ Provider-level latency tracking
+
+> 💡 **Need more help?** Open an issue or check the dashboard for real-time status.
