@@ -436,6 +436,7 @@ const DATA_PROVIDER_CONFIGS = [
   { id: 'coingecko', label: 'CoinGecko', accent: 'bg-green-500/10 text-green-500', defaults: { tier: 'demo', apiKey: '', isActive: true } },
   { id: 'cryptopanic', label: 'CryptoPanic', accent: 'bg-red-500/10 text-red-500', defaults: { apiPlan: 'free', apiKey: '', isActive: true } },
   { id: 'messari', label: 'Messari', accent: 'bg-cyan-500/10 text-cyan-500', defaults: { apiKey: '', isActive: true } },
+  { id: 'dune', label: 'Dune', accent: 'bg-purple-500/10 text-purple-500', defaults: { apiKey: '', isActive: true } },
 ] as const;
 
 type DataProviderConfig = typeof DATA_PROVIDER_CONFIGS[number];
