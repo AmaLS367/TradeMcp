@@ -14,7 +14,7 @@ import {
 
 describe('MCP marketplace registry', () => {
   it('defines crypto research MCP servers', () => {
-    expect(Object.keys(MCP_MARKETPLACE_SERVERS)).toEqual(['crypto_com', 'coingecko_public', 'chainlink', 'dune']);
+    expect(Object.keys(MCP_MARKETPLACE_SERVERS)).toEqual(['crypto_com', 'coingecko_public']);
     expect(MCP_MARKETPLACE_SERVERS.crypto_com).toMatchObject({
       auth: 'none',
       transport: 'streamable_http',
@@ -25,20 +25,6 @@ describe('MCP marketplace registry', () => {
       transport: 'streamable_http',
       endpoint: 'https://mcp.api.coingecko.com/mcp',
     });
-    expect(MCP_MARKETPLACE_SERVERS.chainlink).toMatchObject({
-      auth: 'none',
-      transport: 'streamable_http',
-      endpoint: 'https://chainlink.mcp.junct.dev/mcp',
-    });
-    expect(MCP_MARKETPLACE_SERVERS.dune).toMatchObject({
-      auth: 'api_key',
-      dataProviderId: 'dune',
-      apiKeyHeaderName: 'x-dune-api-key',
-      transport: 'streamable_http',
-      endpoint: 'https://api.dune.com/mcp/v1',
-    });
-    expect(getMarketplaceServerRequiredDataProvider('dune')).toBe('dune');
-    expect(getMarketplaceServerRequiredDataProvider('chainlink')).toBeUndefined();
   });
 
   it('accepts only known marketplace server ids', () => {
@@ -141,10 +127,7 @@ describe('MCP marketplace proxy helpers', () => {
       })),
     }));
 
-    await expect(listMarketplaceToolsForServerIds(['dune'], factory, async () => ({ apiKey: 'dune-key' }))).resolves.toMatchObject([
-      { name: 'dune__auth-dune-key' },
-    ]);
-    expect(factory).toHaveBeenCalledWith(MCP_MARKETPLACE_SERVERS.dune, { apiKey: 'dune-key' });
+    await expect(listMarketplaceToolsForServerIds([], factory)).resolves.toEqual([]);
   });
 
   it('keeps listing other enabled servers when one upstream server fails', async () => {

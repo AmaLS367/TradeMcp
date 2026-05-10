@@ -21,26 +21,6 @@ export const MCP_MARKETPLACE_SERVERS = {
     transport: 'streamable_http',
     endpoint: 'https://mcp.api.coingecko.com/mcp',
   },
-  chainlink: {
-    id: 'chainlink',
-    name: 'Chainlink',
-    description: 'Public Chainlink MCP tools for feed registry and protocol-specific Chainlink data.',
-    category: 'crypto_fundamentals',
-    auth: 'none',
-    transport: 'streamable_http',
-    endpoint: 'https://chainlink.mcp.junct.dev/mcp',
-  },
-  dune: {
-    id: 'dune',
-    name: 'Dune',
-    description: 'Official Dune MCP server for on-chain analytics, table discovery, SQL execution, and usage metrics.',
-    category: 'onchain_analytics',
-    auth: 'api_key',
-    dataProviderId: 'dune',
-    apiKeyHeaderName: 'x-dune-api-key',
-    transport: 'streamable_http',
-    endpoint: 'https://api.dune.com/mcp/v1',
-  },
 } as const;
 
 export type McpMarketplaceServerId = keyof typeof MCP_MARKETPLACE_SERVERS;
@@ -110,9 +90,8 @@ export function listMcpMarketplaceCatalog() {
   return Object.values(MCP_MARKETPLACE_SERVERS);
 }
 
-export function getMarketplaceServerRequiredDataProvider(serverId: McpMarketplaceServerId) {
-  const server = MCP_MARKETPLACE_SERVERS[serverId];
-  return 'dataProviderId' in server ? server.dataProviderId : undefined;
+export function getMarketplaceServerRequiredDataProvider(_serverId: McpMarketplaceServerId) {
+  return undefined;
 }
 
 export function toPublicMcpServerConnection(
@@ -152,18 +131,8 @@ export function parseMarketplaceToolName(toolName: string): { serverId: McpMarke
   return { serverId, upstreamToolName };
 }
 
-function marketplaceRequestInit(server: McpMarketplaceServerDefinition, credentials?: MarketplaceMcpCredentials): RequestInit | undefined {
-  if (!('apiKeyHeaderName' in server)) {
-    return undefined;
-  }
-  if (!credentials?.apiKey) {
-    throw new Error(`${server.name} API key is required. Connect ${server.dataProviderId} in Data Providers before enabling this MCP server.`);
-  }
-  return {
-    headers: {
-      [server.apiKeyHeaderName]: credentials.apiKey,
-    },
-  };
+function marketplaceRequestInit(_server: McpMarketplaceServerDefinition, _credentials?: MarketplaceMcpCredentials): RequestInit | undefined {
+  return undefined;
 }
 
 export function createMarketplaceMcpClient(

@@ -101,7 +101,7 @@ export async function getMarketplaceMcpCredentials(
   if (!providerId) {
     return undefined;
   }
-  const provider = await getActiveDataProvider(userId, providerId);
+  const provider = await getActiveDataProvider(userId, providerId as any);
   return { apiKey: provider.apiKey || '' };
 }
 

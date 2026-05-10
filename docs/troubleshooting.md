@@ -72,9 +72,8 @@
 | `get_crypto_prices`, `get_crypto_markets`, `get_crypto_market_chart`, `get_crypto_trending` | CoinGecko |
 | `get_crypto_news` | CryptoPanic |
 | `ask_messari_research`, `get_messari_timeseries_catalog`, `get_messari_timeseries` | Messari |
-| `dune__*` marketplace tools | Dune API key in Data Providers |
 
-> 🔒 Keys are stored encrypted with AES-256-GCM. You manage them in the dashboard; they are never exposed to AI clients.
+> 🔒 Keys are stored encrypted with AES-256-GCM.
 
 ---
 
@@ -88,7 +87,7 @@
 
 | Cause | 🔍 What to check |
 |-------|------------------|
-| 📡 Upstream server down | Crypto.com, CoinGecko, Chainlink, or Dune outage |
+| 📡 Upstream server down | Crypto.com or CoinGecko outage |
 | ⚙️ Server disabled | Dashboard → **MCP Market** → Is it toggled on? |
 | ⏱️ Connection timeout | Server waits 15 seconds before giving up |
 

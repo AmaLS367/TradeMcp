@@ -4,7 +4,7 @@ export function getTradeMcpResearchGuide(topic: unknown) {
   const normalizedTopic = typeof topic === 'string' ? topic.trim().toLowerCase() : 'overview';
   const commonRules = [
     'Do not hallucinate unavailable metrics. If revenue, staking, holder concentration, unlocks, or usage data is unavailable through connected tools, say exactly that and mark it as a data gap.',
-    'Prefer hard data over narrative. On-chain, exchange order book, CoinGecko, Dune, Chainlink, GitHub, Messari, and protocol/financial data outrank news sentiment when scoring.',
+    'Prefer hard data over narrative. On-chain, exchange order book, CoinGecko, GitHub, Messari, and protocol/financial data outrank news sentiment when scoring.',
     'Never analyze a cryptoasset in isolation. Compare valuation, liquidity, usage, or revenue metrics against the nearest competitor when the data is available.',
     'Separate protocol quality from token value capture. A strong network can still have weak token economics.',
     'Do not use create_trade_proposal unless the user explicitly asks to stage a trade for human approval.',
@@ -30,8 +30,6 @@ export function getTradeMcpResearchGuide(topic: unknown) {
           'ask_messari_research',
           'get_messari_timeseries_catalog',
           'get_messari_timeseries',
-          'chainlink__*',
-          'dune__*',
         ],
         discoveryAndNews: ['search', 'fetch', 'get_crypto_news'],
         rawExchange: ['list_exchange_methods', 'call_exchange_method'],
@@ -75,8 +73,6 @@ export function getTradeMcpResearchGuide(topic: unknown) {
         'search for asset discovery when ID/symbol is ambiguous',
         'get_crypto_markets or coingecko_public__ tools for market cap, FDV, volume, and supply',
         'get_binance_24h_stats plus get_binance_order_book for liquidity and spread',
-        'dune__ tools for on-chain usage, wallets, transfers, contract/table discovery, and custom SQL',
-        'chainlink__ tools for Chainlink-specific feed/protocol data when researching LINK or oracle infrastructure',
         'ask_messari_research and get_messari_timeseries* for research and structured historical metrics when the user has access',
         'get_crypto_news for news/events; use as lower-priority context, not score driver',
         'fetch for protocol docs, public reports, or source URLs when structured tools do not expose a metric',

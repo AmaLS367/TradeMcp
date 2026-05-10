@@ -124,8 +124,6 @@ Tools proxied from upstream public MCP servers. Names are prefixed to avoid coll
 |--------|--------|------|
 | `crypto_com__*` | Crypto.com market data | ![Auth](https://img.shields.io/badge/Auth-None-brightgreen) |
 | `coingecko_public__*` | CoinGecko public MCP | ![Auth](https://img.shields.io/badge/Auth-None-brightgreen) |
-| `chainlink__*` | Chainlink feed data | ![Auth](https://img.shields.io/badge/Auth-None-brightgreen) |
-| `dune__*` | Dune on-chain analytics | ![Auth](https://img.shields.io/badge/Auth-Dune_Key-blue) |
 
 > ⚙️ Enable these in the dashboard under **MCP Market**.
 
