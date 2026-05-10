@@ -89,6 +89,15 @@
 | `get_binance_klines` | OHLCV candles for charting and TA |
 | `get_binance_24h_stats` | 24h change, volume, high/low |
 
+### 🔴 TAAPI.IO
+
+![Auth](https://img.shields.io/badge/Auth-TAAPI.IO_Key-red) ![Read-only](https://img.shields.io/badge/Read--Only-blue)
+
+| Tool | Use for |
+|------|---------|
+| `get_taapi_indicator` | One ready crypto indicator such as RSI, MACD, EMA, SMA, ATR, ADX, Stoch, Supertrend |
+| `get_taapi_bulk_indicators` | Multiple indicators for the same crypto pair/timeframe in one request |
+
 ### 🟠 CryptoPanic
 
 ![Auth](https://img.shields.io/badge/Auth-CryptoPanic_Key-orange) ![Read-only](https://img.shields.io/badge/Read--Only-blue)

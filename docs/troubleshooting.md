@@ -71,6 +71,7 @@
 | `get_technical_indicator` | Twelve Data |
 | `get_technical_indicator_catalog` | No key required |
 | `get_crypto_prices`, `get_crypto_markets`, `get_crypto_market_chart`, `get_crypto_trending` | CoinGecko |
+| `get_taapi_indicator`, `get_taapi_bulk_indicators` | TAAPI.IO |
 | `get_crypto_news` | CryptoPanic |
 | `search_newsapi_articles`, `get_newsapi_top_headlines`, `get_newsapi_sources` | NewsAPI |
 | `ask_messari_research`, `get_messari_timeseries_catalog`, `get_messari_timeseries` | Messari |

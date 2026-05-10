@@ -8,6 +8,9 @@ import {
   buildNewsApiEverythingRequest,
   buildNewsApiSourcesRequest,
   buildNewsApiTopHeadlinesRequest,
+  buildTaapiBulkIndicatorRequest,
+  buildTaapiIndicatorRequest,
+  normalizeTaapiSymbol,
   normalizeBinanceDepthLimit,
   normalizeBinanceKlineInterval,
 } from './cryptoAnalysis';
@@ -124,5 +127,58 @@ describe('crypto analysis helpers', () => {
     }, { apiKey: 'messari-key' });
     expect(timeseries.url.href).toBe('https://api.messari.io/metrics/v1/assets/bitcoin/metrics/price/time-series?start=2026-01-01&end=2026-02-01');
     expect(timeseries.init.headers).toMatchObject({ 'x-messari-api-key': 'messari-key' });
+  });
+
+  it('builds TAAPI direct indicator requests for slash or compact crypto symbols', () => {
+    expect(normalizeTaapiSymbol('AAVEUSDT')).toBe('AAVE/USDT');
+
+    const request = buildTaapiIndicatorRequest({
+      indicator: 'rsi',
+      exchange: 'bybit',
+      symbol: 'AAVEUSDT',
+      interval: '1h',
+      params: {
+        period: 14,
+        backtrack: 1,
+        addResultTimestamp: true,
+      },
+    }, {
+      apiKey: 'taapi-secret',
+      baseUrl: 'https://api.taapi.io',
+    });
+
+    expect(request.url.href).toBe('https://api.taapi.io/rsi?secret=taapi-secret&exchange=bybit&symbol=AAVE%2FUSDT&interval=1h&period=14&backtrack=1&addResultTimestamp=true');
+  });
+
+  it('builds TAAPI bulk requests for multiple indicators on one pair', () => {
+    const request = buildTaapiBulkIndicatorRequest({
+      exchange: 'binance',
+      symbol: 'AAVE/USDT',
+      interval: '4h',
+      indicators: [
+        { indicator: 'rsi', period: 14 },
+        { id: 'macd-default', indicator: 'macd', backtrack: 1 },
+      ],
+    }, {
+      apiKey: 'taapi-secret',
+    });
+
+    expect(request.url.href).toBe('https://api.taapi.io/bulk');
+    expect(request.init).toEqual({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        secret: 'taapi-secret',
+        construct: {
+          exchange: 'binance',
+          symbol: 'AAVE/USDT',
+          interval: '4h',
+          indicators: [
+            { indicator: 'rsi', period: 14 },
+            { id: 'macd-default', indicator: 'macd', backtrack: 1 },
+          ],
+        },
+      }),
+    });
   });
 });

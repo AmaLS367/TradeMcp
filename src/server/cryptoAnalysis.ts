@@ -43,6 +43,8 @@ export const CRYPTO_ANALYSIS_MCP_TOOL_NAMES = [
   'search_newsapi_articles',
   'get_newsapi_top_headlines',
   'get_newsapi_sources',
+  'get_taapi_indicator',
+  'get_taapi_bulk_indicators',
 ] as const;
 
 export type CoinGeckoCredentials = {
@@ -60,6 +62,11 @@ export type MessariCredentials = {
 };
 
 export type NewsApiCredentials = {
+  apiKey: string;
+  baseUrl?: string;
+};
+
+export type TaapiCredentials = {
   apiKey: string;
   baseUrl?: string;
 };
@@ -82,6 +89,17 @@ function requireString(value: unknown, name: string) {
     throw new Error(`${name} must be a non-empty string`);
   }
   return value.trim();
+}
+
+function setOptionalSearchParam(url: URL, name: string, value: unknown) {
+  if (value === undefined || value === null || value === '') return;
+  if (Array.isArray(value)) {
+    const normalized = value.map((item) => String(item).trim()).filter(Boolean);
+    if (normalized.length) url.searchParams.set(name, normalized.join(','));
+    return;
+  }
+  const normalized = String(value).trim();
+  if (normalized) url.searchParams.set(name, normalized);
 }
 
 function normalizeStringList(value: unknown, name: string, fallback?: string[]) {
@@ -340,6 +358,137 @@ export async function getNewsApiTopHeadlines(args: Record<string, unknown>, cred
 export async function getNewsApiSources(args: Record<string, unknown>, credentials: NewsApiCredentials) {
   const request = buildNewsApiSourcesRequest(args, credentials);
   return { provider: 'newsapi', data: await fetchJson(request.url, request.init, 'newsapi') };
+}
+
+function taapiAuth(credentials: TaapiCredentials) {
+  if (!credentials.apiKey?.trim()) {
+    throw new Error('Connect TAAPI.IO in the dashboard before using this tool');
+  }
+  return {
+    apiKey: credentials.apiKey.trim(),
+    baseUrl: credentials.baseUrl?.trim() || 'https://api.taapi.io',
+  };
+}
+
+export function normalizeTaapiSymbol(symbol: unknown) {
+  const raw = requireString(symbol, 'symbol').toUpperCase().replace(/[\s_-]/g, '/');
+  if (raw.includes('/')) {
+    const [base, quote, ...rest] = raw.split('/').filter(Boolean);
+    if (!base || !quote || rest.length) {
+      throw new Error('symbol must be a crypto pair like AAVE/USDT or AAVEUSDT');
+    }
+    return `${base}/${quote}`;
+  }
+
+  const quote = ['USDT', 'USDC', 'USD', 'BTC', 'ETH', 'EUR'].find((item) => raw.endsWith(item));
+  if (!quote || raw.length <= quote.length) {
+    throw new Error('symbol must be a crypto pair like AAVE/USDT or AAVEUSDT');
+  }
+  return `${raw.slice(0, -quote.length)}/${quote}`;
+}
+
+function normalizeTaapiExchange(exchange: unknown) {
+  return typeof exchange === 'string' && exchange.trim() ? exchange.trim().toLowerCase() : 'binance';
+}
+
+function normalizeTaapiInterval(interval: unknown) {
+  return typeof interval === 'string' && interval.trim() ? interval.trim() : '1h';
+}
+
+function normalizeTaapiIndicator(value: unknown) {
+  const indicator = requireString(value, 'indicator').toLowerCase();
+  if (!/^[a-z0-9_-]+$/.test(indicator)) {
+    throw new Error('indicator must be a TAAPI endpoint name such as rsi, macd, ema, or supertrend');
+  }
+  return indicator;
+}
+
+function setTaapiParam(url: URL, name: string, value: unknown) {
+  if (name === 'secret' || name === 'exchange' || name === 'symbol' || name === 'interval') return;
+  setOptionalSearchParam(url, name, value);
+}
+
+export function buildTaapiIndicatorRequest(args: Record<string, unknown>, credentials: TaapiCredentials) {
+  const { apiKey, baseUrl } = taapiAuth(credentials);
+  const indicator = normalizeTaapiIndicator(args.indicator);
+  const url = new URL(`/${indicator}`, baseUrl);
+  url.searchParams.set('secret', apiKey);
+  url.searchParams.set('exchange', normalizeTaapiExchange(args.exchange));
+  url.searchParams.set('symbol', normalizeTaapiSymbol(args.symbol));
+  url.searchParams.set('interval', normalizeTaapiInterval(args.interval));
+
+  if (args.params && typeof args.params === 'object' && !Array.isArray(args.params)) {
+    for (const [key, value] of Object.entries(args.params as Record<string, unknown>)) {
+      setTaapiParam(url, key, value);
+    }
+  }
+
+  for (const [key, value] of Object.entries(args)) {
+    if (['indicator', 'exchange', 'symbol', 'interval', 'params'].includes(key)) continue;
+    setTaapiParam(url, key, value);
+  }
+
+  return { url, indicator };
+}
+
+function normalizeTaapiIndicatorObject(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('indicators must contain objects with at least an indicator field');
+  }
+  const input = value as Record<string, unknown>;
+  const indicator = normalizeTaapiIndicator(input.indicator);
+  const output: Record<string, unknown> = {};
+  for (const [key, fieldValue] of Object.entries(input)) {
+    if (key === 'secret' || key === 'construct') continue;
+    if (key === 'indicator') {
+      output.indicator = indicator;
+      continue;
+    }
+    if (fieldValue !== undefined && fieldValue !== null && fieldValue !== '') {
+      output[key] = fieldValue;
+    }
+  }
+  if (!('indicator' in output)) output.indicator = indicator;
+  return output;
+}
+
+export function buildTaapiBulkIndicatorRequest(args: Record<string, unknown>, credentials: TaapiCredentials) {
+  const { apiKey, baseUrl } = taapiAuth(credentials);
+  if (!Array.isArray(args.indicators) || !args.indicators.length) {
+    throw new Error('indicators must be a non-empty array');
+  }
+  if (args.indicators.length > 20) {
+    throw new Error('TAAPI bulk requests support up to 20 indicator calculations');
+  }
+
+  const body = {
+    secret: apiKey,
+    construct: {
+      exchange: normalizeTaapiExchange(args.exchange),
+      symbol: normalizeTaapiSymbol(args.symbol),
+      interval: normalizeTaapiInterval(args.interval),
+      indicators: args.indicators.map(normalizeTaapiIndicatorObject),
+    },
+  };
+
+  return {
+    url: new URL('/bulk', baseUrl),
+    init: {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    } satisfies FetchInit,
+  };
+}
+
+export async function getTaapiIndicator(args: Record<string, unknown>, credentials: TaapiCredentials) {
+  const request = buildTaapiIndicatorRequest(args, credentials);
+  return { provider: 'taapi', indicator: request.indicator, data: await fetchJson(request.url, undefined, 'taapi') };
+}
+
+export async function getTaapiBulkIndicators(args: Record<string, unknown>, credentials: TaapiCredentials) {
+  const request = buildTaapiBulkIndicatorRequest(args, credentials);
+  return { provider: 'taapi', data: await fetchJson(request.url, request.init, 'taapi') };
 }
 
 export function buildMessariResearchRequest(args: Record<string, unknown>, credentials: MessariCredentials) {

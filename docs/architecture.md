@@ -53,6 +53,7 @@
 | **Messari** | 🔬 Fundamental research, timeseries data | `apiKey` |
 | **Dune** | ⛓️ On-chain analytics (via MCP Market) | API key in Data Providers → MCP Market |
 | **NewsAPI** | 🗞️ General news articles, top headlines, source discovery | `apiKey`, `baseUrl` |
+| **TAAPI.IO** | 📈 Ready crypto technical indicators and bulk indicator queries | `apiKey`, `baseUrl` |
 
 **🔐 Security:** Keys are encrypted with AES-256-GCM before storage and decrypted server-side only when making API calls.
 

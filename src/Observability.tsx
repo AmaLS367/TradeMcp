@@ -196,6 +196,7 @@ function ProviderIcon({ provider }: { provider: string }) {
     cryptopanic: ExternalLink,
     messari: Server,
     newsapi: ExternalLink,
+    taapi: Activity,
     oanda: Activity,
     twelve: Activity,
     marketdata: Activity,

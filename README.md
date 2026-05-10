@@ -43,7 +43,7 @@ docker compose up -d --build
 | `PORT`                         | ❌ No    | Server port (default `3000`)                                                                            |
 | `PUBLIC_BASE_URL`              | ❌ No    | Public URL — required in production for OAuth                                                            |
 
-> 📌 Market data provider keys (OANDA, Twelve Data, CoinGecko, CryptoPanic, Messari, NewsAPI) are configured in the dashboard under **Market Data Providers**. They are encrypted per user.
+> 📌 Market data provider keys (OANDA, Twelve Data, CoinGecko, CryptoPanic, Messari, NewsAPI, TAAPI.IO) are configured in the dashboard under **Market Data Providers**. They are encrypted per user.
 
 ---
 

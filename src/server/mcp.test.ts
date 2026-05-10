@@ -205,6 +205,11 @@ describe('observability normalization', () => {
     expect(resolveToolCallProvider('call_exchange_method', { provider: 'bybit' })).toBe('bybit');
     expect(resolveToolCallProvider('list_exchange_methods', { provider: 'binance' })).toBe('binance');
   });
+
+  it('attributes TAAPI indicator tools to the TAAPI provider', () => {
+    expect(resolveToolCallProvider('get_taapi_indicator')).toBe('taapi');
+    expect(resolveToolCallProvider('get_taapi_bulk_indicators')).toBe('taapi');
+  });
 });
 
 describe('TradeMCP research guide', () => {

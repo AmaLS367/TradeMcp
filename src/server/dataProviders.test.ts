@@ -20,6 +20,7 @@ describe('data provider credential helpers', () => {
       'messari',
       'dune',
       'newsapi',
+      'taapi',
     ]);
   });
 
@@ -28,6 +29,7 @@ describe('data provider credential helpers', () => {
     expect(getDataProviderValidationMode('dune')).toBe('key_only');
     expect(getDataProviderValidationMode('coingecko')).toBe('live_probe');
     expect(getDataProviderValidationMode('newsapi')).toBe('live_probe');
+    expect(getDataProviderValidationMode('taapi')).toBe('live_probe');
   });
 
   it('encrypts secret fields and keeps provider config non-secret', () => {
@@ -86,6 +88,21 @@ describe('data provider credential helpers', () => {
       encryptedFields: { apiKey: 'enc:newsapi-key-123' },
       config: { baseUrl: 'https://newsapi.org' },
       apiKeyPreview: 'newsapi-...',
+      isActive: true,
+    });
+  });
+
+  it('stores TAAPI keys with its default base URL and no extra required config', () => {
+    const doc = buildDataProviderDocument('taapi', {
+      apiKey: 'taapi-key-123',
+      isActive: true,
+    }, encrypt);
+
+    expect(doc).toMatchObject({
+      provider: 'taapi',
+      encryptedFields: { apiKey: 'enc:taapi-key-123' },
+      config: { baseUrl: 'https://api.taapi.io' },
+      apiKeyPreview: 'taapi-ke...',
       isActive: true,
     });
   });

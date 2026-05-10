@@ -41,6 +41,12 @@ export const DATA_PROVIDER_DEFINITIONS = {
     configFields: ['baseUrl'],
     defaults: { baseUrl: 'https://newsapi.org' },
   },
+  taapi: {
+    label: 'TAAPI.IO',
+    secretFields: ['apiKey'],
+    configFields: ['baseUrl'],
+    defaults: { baseUrl: 'https://api.taapi.io' },
+  },
 } as const;
 
 export type DataProviderId = keyof typeof DATA_PROVIDER_DEFINITIONS;

@@ -22,6 +22,8 @@ import {
     getMessariTimeseriesCatalog,
     getNewsApiSources,
     getNewsApiTopHeadlines,
+    getTaapiBulkIndicators,
+    getTaapiIndicator,
     searchNewsApiArticles,
 } from './cryptoAnalysis.js';
 import {
@@ -51,6 +53,7 @@ import {
     getMarketplaceMcpCredentials,
     getMessariCredentials,
     getNewsApiCredentials,
+    getTaapiCredentials,
 } from './mcpCredentials.js';
 
 const MAX_TOOL_RESPONSE_CHARS = 60_000;
@@ -221,6 +224,7 @@ const BINANCE_TOOLS = new Set(['get_binance_ticker', 'get_binance_order_book', '
 const CRYPTOPANIC_TOOLS = new Set(['get_crypto_news']);
 const MESSARI_TOOLS = new Set(['ask_messari_research', 'get_messari_timeseries_catalog', 'get_messari_timeseries']);
 const NEWSAPI_TOOLS = new Set(['search_newsapi_articles', 'get_newsapi_top_headlines', 'get_newsapi_sources']);
+const TAAPI_TOOLS = new Set(['get_taapi_indicator', 'get_taapi_bulk_indicators']);
 const MARKETDATA_TOOLS = new Set<string>([...MARKET_DATA_MCP_TOOL_NAMES]);
 const OBSERVABILITY_TOOLS = new Set<string>([...OBSERVABILITY_MCP_TOOL_NAMES]);
 const NATIVE_TOOLS = new Set(['search', 'fetch', 'create_trade_proposal', 'list_exchange_methods', 'call_exchange_method', 'get_account_summary', ...OBSERVABILITY_MCP_TOOL_NAMES]);
@@ -233,6 +237,7 @@ function extractProviderFromToolName(toolName: string): string {
   if (CRYPTOPANIC_TOOLS.has(toolName)) return 'cryptopanic';
   if (MESSARI_TOOLS.has(toolName)) return 'messari';
   if (NEWSAPI_TOOLS.has(toolName)) return 'newsapi';
+  if (TAAPI_TOOLS.has(toolName)) return 'taapi';
   if (MARKETDATA_TOOLS.has(toolName)) return 'marketdata';
   if (OBSERVABILITY_TOOLS.has(toolName)) return 'observability';
   if (NATIVE_TOOLS.has(toolName)) return 'native';
@@ -257,7 +262,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
         capabilities: {
             tools: {}
         },
-        instructions: "Trade MCP exposes market data, crypto research, exchange account reads, human-approved trade proposal tools, and raw Binance/Bybit CCXT API access for the authenticated dashboard user. Before deep crypto fundamental or technical analysis, call get_trademcp_research_guide to choose the correct tool sequence and source-priority rules. list_exchange_methods and call_exchange_method are available in every client profile and can call public, private, trading, transfer, and raw endpoint methods when the user's exchange connection has permissions."
+        instructions: "Trade MCP exposes market data, crypto research, ready TAAPI.IO crypto indicators, exchange account reads, human-approved trade proposal tools, and raw Binance/Bybit CCXT API access for the authenticated dashboard user. Before deep crypto fundamental or technical analysis, call get_trademcp_research_guide to choose the correct tool sequence and source-priority rules. list_exchange_methods and call_exchange_method are available in every client profile and can call public, private, trading, transfer, and raw endpoint methods when the user's exchange connection has permissions."
     });
 
     server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -643,6 +648,49 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                             language: { type: "string", description: "Optional ISO-639-1 language code, for example en." },
                             country: { type: "string", description: "Optional 2-letter country code, for example us." }
                         }
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[15],
+                    description: "Use this when the user asks for a crypto technical indicator such as RSI, MACD, EMA, SMA, Bollinger Bands, ATR, ADX, stochastic, or any TAAPI.IO indicator for a pair like AAVE/USDT. Uses the user's TAAPI.IO BYOK key and calls the generic direct indicator endpoint. Prefer get_taapi_bulk_indicators when multiple indicators are needed for the same pair/timeframe.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            indicator: { type: "string", description: "TAAPI.IO endpoint name such as rsi, macd, ema, sma, bbands, atr, adx, stoch, stochrsi, supertrend, or another supported indicator." },
+                            exchange: { type: "string", description: "TAAPI exchange id, for example binance, binancefutures, bybit, gateio, coinbase, or kraken. Defaults to binance." },
+                            symbol: { type: "string", description: "Crypto pair as BASE/QUOTE or compact BASEQUOTE, for example AAVE/USDT or AAVEUSDT." },
+                            interval: { type: "string", description: "Timeframe such as 1m, 5m, 15m, 30m, 1h, 4h, 1d. Defaults to 1h." },
+                            params: { type: "object", description: "Optional indicator-specific TAAPI parameters such as period, backtrack, results, chart, addResultTimestamp, gaps, optInTimePeriod, fastPeriod, slowPeriod, or signalPeriod.", additionalProperties: true },
+                        },
+                        required: ["indicator", "symbol"]
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[16],
+                    description: "Use this to fetch multiple TAAPI.IO crypto indicators in one request for the same pair/timeframe, for example RSI plus MACD plus EMA for AAVE/USDT. Up to 20 indicator calculations per request. Uses the user's TAAPI.IO BYOK key.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            exchange: { type: "string", description: "TAAPI exchange id. Defaults to binance." },
+                            symbol: { type: "string", description: "Crypto pair as BASE/QUOTE or compact BASEQUOTE, for example AAVE/USDT or AAVEUSDT." },
+                            interval: { type: "string", description: "Timeframe such as 1m, 5m, 15m, 30m, 1h, 4h, 1d. Defaults to 1h." },
+                            indicators: {
+                                type: "array",
+                                description: "Indicator calculations. Each object must include indicator and may include any TAAPI indicator-specific params such as id, period, backtrack, results, chart, or addResultTimestamp.",
+                                items: {
+                                    type: "object",
+                                    properties: {
+                                        id: { type: "string" },
+                                        indicator: { type: "string" },
+                                    },
+                                    required: ["indicator"],
+                                    additionalProperties: true,
+                                },
+                            },
+                        },
+                        required: ["symbol", "indicators"]
                     },
                     annotations: { readOnlyHint: true },
                 },
@@ -1112,6 +1160,26 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
 
         if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[14]) {
             const result = await getNewsApiSources((args || {}) as any, await getNewsApiCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[15]) {
+            const result = await getTaapiIndicator((args || {}) as any, await getTaapiCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[16]) {
+            const result = await getTaapiBulkIndicators((args || {}) as any, await getTaapiCredentials(userId));
             return {
                 content: [{
                     type: "text",

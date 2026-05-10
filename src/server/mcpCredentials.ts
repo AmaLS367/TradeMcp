@@ -6,10 +6,12 @@ import {
   getCoinGeckoTrending,
   getCryptoPanicNews,
   getNewsApiSources,
+  getTaapiIndicator,
   type CoinGeckoCredentials,
   type CryptoPanicCredentials,
   type MessariCredentials,
   type NewsApiCredentials,
+  type TaapiCredentials,
 } from './cryptoAnalysis.js';
 import {
   buildDataProviderDocument,
@@ -103,6 +105,14 @@ export async function getNewsApiCredentials(userId: string | null): Promise<News
   };
 }
 
+export async function getTaapiCredentials(userId: string | null): Promise<TaapiCredentials> {
+  const provider = await getActiveDataProvider(userId, 'taapi');
+  return {
+    apiKey: provider.apiKey || '',
+    baseUrl: provider.baseUrl || 'https://api.taapi.io',
+  };
+}
+
 export async function getMarketplaceMcpCredentials(
   userId: string | null,
   serverId: McpMarketplaceServerId,
@@ -157,6 +167,16 @@ export async function validateDataProviderInput(
     await getNewsApiSources({}, {
       apiKey: decrypted.apiKey || '',
       baseUrl: decrypted.baseUrl || 'https://newsapi.org',
+    });
+  } else if (provider === 'taapi') {
+    await getTaapiIndicator({
+      indicator: 'rsi',
+      exchange: 'binance',
+      symbol: 'BTC/USDT',
+      interval: '1h',
+    }, {
+      apiKey: decrypted.apiKey || '',
+      baseUrl: decrypted.baseUrl || 'https://api.taapi.io',
     });
   }
   return {};

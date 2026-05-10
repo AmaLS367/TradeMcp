@@ -105,9 +105,22 @@ describe('market data helpers', () => {
             expect.objectContaining({ id: 'macd', label: 'Moving Average Convergence Divergence' }),
           ]),
         },
+        get_taapi_indicator: {
+          provider: 'taapi',
+          requiredDataProvider: 'taapi',
+          assetClass: 'crypto',
+          symbolFormat: 'BASE/QUOTE or compact BASEQUOTE, for example AAVE/USDT or AAVEUSDT',
+        },
+        get_taapi_bulk_indicators: {
+          provider: 'taapi',
+          indicators: expect.arrayContaining([
+            expect.objectContaining({ id: 'rsi' }),
+            expect.objectContaining({ id: 'macd' }),
+          ]),
+        },
       },
       routing: expect.arrayContaining([
-        expect.stringContaining('get_technical_indicator'),
+        expect.stringContaining('get_taapi_indicator'),
       ]),
     });
   });
