@@ -40,6 +40,9 @@ export const CRYPTO_ANALYSIS_MCP_TOOL_NAMES = [
   'ask_messari_research',
   'get_messari_timeseries_catalog',
   'get_messari_timeseries',
+  'search_newsapi_articles',
+  'get_newsapi_top_headlines',
+  'get_newsapi_sources',
 ] as const;
 
 export type CoinGeckoCredentials = {
@@ -54,6 +57,11 @@ export type CryptoPanicCredentials = {
 
 export type MessariCredentials = {
   apiKey: string;
+};
+
+export type NewsApiCredentials = {
+  apiKey: string;
+  baseUrl?: string;
 };
 
 type PublicBinanceExchange = {
@@ -261,6 +269,77 @@ export async function getCryptoPanicNews(args: Record<string, unknown>, credenti
   const request = buildCryptoPanicNewsRequest(args, credentials);
   const pages = await Promise.all(request.pages.map((url) => fetchJson(url, undefined, 'cryptopanic')));
   return { provider: 'cryptopanic', pages };
+}
+
+function newsApiAuth(credentials: NewsApiCredentials) {
+  return {
+    baseUrl: credentials.baseUrl?.trim() || 'https://newsapi.org',
+    headers: { 'X-Api-Key': credentials.apiKey },
+  };
+}
+
+function setOptionalNewsApiParam(url: URL, name: string, value: unknown) {
+  if (value === undefined || value === null || value === '') return;
+  if (Array.isArray(value)) {
+    const normalized = value.map((item) => String(item).trim()).filter(Boolean);
+    if (normalized.length) url.searchParams.set(name, normalized.join(','));
+    return;
+  }
+  const normalized = String(value).trim();
+  if (normalized) url.searchParams.set(name, normalized);
+}
+
+export function buildNewsApiEverythingRequest(args: Record<string, unknown>, credentials: NewsApiCredentials) {
+  const { baseUrl, headers } = newsApiAuth(credentials);
+  const url = new URL('/v2/everything', baseUrl);
+  setOptionalNewsApiParam(url, 'q', args.q || args.query);
+  setOptionalNewsApiParam(url, 'searchIn', args.searchIn);
+  setOptionalNewsApiParam(url, 'sources', args.sources);
+  setOptionalNewsApiParam(url, 'domains', args.domains);
+  setOptionalNewsApiParam(url, 'excludeDomains', args.excludeDomains);
+  setOptionalNewsApiParam(url, 'from', args.from);
+  setOptionalNewsApiParam(url, 'to', args.to);
+  setOptionalNewsApiParam(url, 'language', args.language);
+  setOptionalNewsApiParam(url, 'sortBy', args.sortBy);
+  url.searchParams.set('pageSize', String(normalizePositiveInteger(args.pageSize ?? args.page_size, 100, 100)));
+  url.searchParams.set('page', String(normalizePositiveInteger(args.page, 1, 1000)));
+  return { url, init: { headers } satisfies FetchInit };
+}
+
+export function buildNewsApiTopHeadlinesRequest(args: Record<string, unknown>, credentials: NewsApiCredentials) {
+  const { baseUrl, headers } = newsApiAuth(credentials);
+  const url = new URL('/v2/top-headlines', baseUrl);
+  setOptionalNewsApiParam(url, 'country', args.country);
+  setOptionalNewsApiParam(url, 'category', args.category);
+  setOptionalNewsApiParam(url, 'sources', args.sources);
+  setOptionalNewsApiParam(url, 'q', args.q || args.query);
+  url.searchParams.set('pageSize', String(normalizePositiveInteger(args.pageSize ?? args.page_size, 20, 100)));
+  url.searchParams.set('page', String(normalizePositiveInteger(args.page, 1, 1000)));
+  return { url, init: { headers } satisfies FetchInit };
+}
+
+export function buildNewsApiSourcesRequest(args: Record<string, unknown>, credentials: NewsApiCredentials) {
+  const { baseUrl, headers } = newsApiAuth(credentials);
+  const url = new URL('/v2/top-headlines/sources', baseUrl);
+  setOptionalNewsApiParam(url, 'category', args.category);
+  setOptionalNewsApiParam(url, 'language', args.language);
+  setOptionalNewsApiParam(url, 'country', args.country);
+  return { url, init: { headers } satisfies FetchInit };
+}
+
+export async function searchNewsApiArticles(args: Record<string, unknown>, credentials: NewsApiCredentials) {
+  const request = buildNewsApiEverythingRequest(args, credentials);
+  return { provider: 'newsapi', data: await fetchJson(request.url, request.init, 'newsapi') };
+}
+
+export async function getNewsApiTopHeadlines(args: Record<string, unknown>, credentials: NewsApiCredentials) {
+  const request = buildNewsApiTopHeadlinesRequest(args, credentials);
+  return { provider: 'newsapi', data: await fetchJson(request.url, request.init, 'newsapi') };
+}
+
+export async function getNewsApiSources(args: Record<string, unknown>, credentials: NewsApiCredentials) {
+  const request = buildNewsApiSourcesRequest(args, credentials);
+  return { provider: 'newsapi', data: await fetchJson(request.url, request.init, 'newsapi') };
 }
 
 export function buildMessariResearchRequest(args: Record<string, unknown>, credentials: MessariCredentials) {

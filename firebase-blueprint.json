@@ -28,7 +28,7 @@
       "description": "User-owned market data provider credentials (encrypted, backend-only).",
       "type": "object",
       "properties": {
-        "provider": { "type": "string", "enum": ["oanda", "twelve_data", "coingecko", "cryptopanic", "messari"] },
+        "provider": { "type": "string", "enum": ["oanda", "twelve_data", "coingecko", "cryptopanic", "messari", "dune", "newsapi"] },
         "encryptedFields": { "type": "object" },
         "config": { "type": "object" },
         "apiKeyPreview": { "type": "string" },

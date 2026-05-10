@@ -31,7 +31,7 @@ const PROFILES: { id: Profile; label: string; description: string; tools: string
     id: 'safe_research',
     label: 'Safe Research',
     description: 'Market data, prices, news, research, and raw Binance/Bybit API access.',
-    tools: 'CoinGecko · Binance public · CryptoPanic · Messari · FX data · search · fetch · list_exchange_methods · call_exchange_method',
+    tools: 'CoinGecko · Binance public · CryptoPanic · NewsAPI · Messari · FX data · search · fetch · list_exchange_methods · call_exchange_method',
   },
   {
     id: 'trading_review',

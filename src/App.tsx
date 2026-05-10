@@ -483,6 +483,7 @@ const DATA_PROVIDER_CONFIGS = [
   { id: 'cryptopanic', label: 'CryptoPanic', accent: 'bg-red-500/10 text-red-500', defaults: { apiPlan: 'free', apiKey: '', isActive: true } },
   { id: 'messari', label: 'Messari', accent: 'bg-cyan-500/10 text-cyan-500', defaults: { apiKey: '', isActive: true } },
   { id: 'dune', label: 'Dune', accent: 'bg-purple-500/10 text-purple-500', defaults: { apiKey: '', isActive: true } },
+  { id: 'newsapi', label: 'NewsAPI', accent: 'bg-amber-500/10 text-amber-500', defaults: { baseUrl: 'https://newsapi.org', apiKey: '', isActive: true } },
 ] as const;
 
 type DataProviderConfig = typeof DATA_PROVIDER_CONFIGS[number];
@@ -847,7 +848,7 @@ function MarketDataProviders({ user }: { user: User }) {
             </div>
           </>
         )}
-        {config.id === 'twelve_data' && (
+        {(config.id === 'twelve_data' || config.id === 'newsapi') && (
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Base URL</Label>
             <Input

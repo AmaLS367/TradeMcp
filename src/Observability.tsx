@@ -195,6 +195,7 @@ function ProviderIcon({ provider }: { provider: string }) {
     binance: Wallet,
     cryptopanic: ExternalLink,
     messari: Server,
+    newsapi: ExternalLink,
     oanda: Activity,
     twelve: Activity,
     marketdata: Activity,

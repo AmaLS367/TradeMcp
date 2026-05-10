@@ -94,6 +94,16 @@
 
 **`get_crypto_news`** — News headlines with sentiment filters (hot, bullish, bearish, important).
 
+### 🟡 NewsAPI
+
+![Auth](https://img.shields.io/badge/Auth-NewsAPI_Key-yellow) ![Read-only](https://img.shields.io/badge/Read--Only-blue)
+
+| Tool | Use for |
+|------|---------|
+| `search_newsapi_articles` | Article discovery via NewsAPI `/v2/everything` |
+| `get_newsapi_top_headlines` | Live top headlines by country/category/source/query |
+| `get_newsapi_sources` | Discover NewsAPI source IDs |
+
 ### 🔵 Messari
 
 ![Auth](https://img.shields.io/badge/Auth-Messari_Key-blue) ![Read-only](https://img.shields.io/badge/Read--Only-blue)

@@ -19,6 +19,7 @@ describe('data provider credential helpers', () => {
       'cryptopanic',
       'messari',
       'dune',
+      'newsapi',
     ]);
   });
 
@@ -26,6 +27,7 @@ describe('data provider credential helpers', () => {
     expect(getDataProviderValidationMode('messari')).toBe('key_only');
     expect(getDataProviderValidationMode('dune')).toBe('key_only');
     expect(getDataProviderValidationMode('coingecko')).toBe('live_probe');
+    expect(getDataProviderValidationMode('newsapi')).toBe('live_probe');
   });
 
   it('encrypts secret fields and keeps provider config non-secret', () => {
@@ -70,6 +72,21 @@ describe('data provider credential helpers', () => {
       createdAt: undefined,
       updatedAt: undefined,
       lastValidatedAt: undefined,
+    });
+  });
+
+  it('stores NewsAPI keys with its default base URL', () => {
+    const doc = buildDataProviderDocument('newsapi', {
+      apiKey: 'newsapi-key-123',
+      isActive: true,
+    }, encrypt);
+
+    expect(doc).toMatchObject({
+      provider: 'newsapi',
+      encryptedFields: { apiKey: 'enc:newsapi-key-123' },
+      config: { baseUrl: 'https://newsapi.org' },
+      apiKeyPreview: 'newsapi-...',
+      isActive: true,
     });
   });
 });

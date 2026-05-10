@@ -5,6 +5,9 @@ import {
   buildCryptoPanicNewsRequest,
   buildMessariResearchRequest,
   buildMessariTimeseriesRequest,
+  buildNewsApiEverythingRequest,
+  buildNewsApiSourcesRequest,
+  buildNewsApiTopHeadlinesRequest,
   normalizeBinanceDepthLimit,
   normalizeBinanceKlineInterval,
 } from './cryptoAnalysis';
@@ -60,6 +63,51 @@ describe('crypto analysis helpers', () => {
 
     expect(request.url.href).toBe('https://cryptopanic.com/api/free/v2/posts/?auth_token=panic-token&kind=news&currencies=BTC%2CETH&regions=en&filter=bullish&public=true&page=1');
     expect(request.pages).toHaveLength(3);
+  });
+
+  it('builds NewsAPI everything requests with X-Api-Key auth and search filters', () => {
+    const request = buildNewsApiEverythingRequest({
+      q: 'bitcoin ETF',
+      searchIn: ['title', 'description'],
+      language: 'en',
+      sortBy: 'publishedAt',
+      from: '2026-05-01',
+      to: '2026-05-10',
+      pageSize: 25,
+      page: 2,
+      domains: ['coindesk.com', 'cointelegraph.com'],
+      excludeDomains: 'example.com',
+    }, {
+      apiKey: 'news-key',
+      baseUrl: 'https://newsapi.org',
+    });
+
+    expect(request.url.href).toBe('https://newsapi.org/v2/everything?q=bitcoin+ETF&searchIn=title%2Cdescription&domains=coindesk.com%2Ccointelegraph.com&excludeDomains=example.com&from=2026-05-01&to=2026-05-10&language=en&sortBy=publishedAt&pageSize=25&page=2');
+    expect(request.init.headers).toEqual({ 'X-Api-Key': 'news-key' });
+  });
+
+  it('builds NewsAPI top-headlines and sources requests', () => {
+    const headlines = buildNewsApiTopHeadlinesRequest({
+      q: 'ethereum',
+      country: 'us',
+      category: 'business',
+      pageSize: 20,
+    }, {
+      apiKey: 'news-key',
+      baseUrl: 'https://newsapi.org',
+    });
+    expect(headlines.url.href).toBe('https://newsapi.org/v2/top-headlines?country=us&category=business&q=ethereum&pageSize=20&page=1');
+    expect(headlines.init.headers).toEqual({ 'X-Api-Key': 'news-key' });
+
+    const sources = buildNewsApiSourcesRequest({
+      language: 'en',
+      category: 'business',
+    }, {
+      apiKey: 'news-key',
+      baseUrl: 'https://newsapi.org',
+    });
+    expect(sources.url.href).toBe('https://newsapi.org/v2/top-headlines/sources?category=business&language=en');
+    expect(sources.init.headers).toEqual({ 'X-Api-Key': 'news-key' });
   });
 
   it('builds Messari research and timeseries requests with x-messari-api-key', () => {

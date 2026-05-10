@@ -35,6 +35,12 @@ export const DATA_PROVIDER_DEFINITIONS = {
     configFields: [],
     defaults: {},
   },
+  newsapi: {
+    label: 'NewsAPI',
+    secretFields: ['apiKey'],
+    configFields: ['baseUrl'],
+    defaults: { baseUrl: 'https://newsapi.org' },
+  },
 } as const;
 
 export type DataProviderId = keyof typeof DATA_PROVIDER_DEFINITIONS;

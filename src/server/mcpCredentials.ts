@@ -5,9 +5,11 @@ import {
 import {
   getCoinGeckoTrending,
   getCryptoPanicNews,
+  getNewsApiSources,
   type CoinGeckoCredentials,
   type CryptoPanicCredentials,
   type MessariCredentials,
+  type NewsApiCredentials,
 } from './cryptoAnalysis.js';
 import {
   buildDataProviderDocument,
@@ -93,6 +95,14 @@ export async function getMessariCredentials(userId: string | null): Promise<Mess
   return { apiKey: provider.apiKey || '' };
 }
 
+export async function getNewsApiCredentials(userId: string | null): Promise<NewsApiCredentials> {
+  const provider = await getActiveDataProvider(userId, 'newsapi');
+  return {
+    apiKey: provider.apiKey || '',
+    baseUrl: provider.baseUrl || 'https://newsapi.org',
+  };
+}
+
 export async function getMarketplaceMcpCredentials(
   userId: string | null,
   serverId: McpMarketplaceServerId,
@@ -142,6 +152,11 @@ export async function validateDataProviderInput(
     await getCryptoPanicNews({ num_pages: 1, public: true }, {
       apiKey: decrypted.apiKey || '',
       apiPlan: decrypted.apiPlan || 'free',
+    });
+  } else if (provider === 'newsapi') {
+    await getNewsApiSources({}, {
+      apiKey: decrypted.apiKey || '',
+      baseUrl: decrypted.baseUrl || 'https://newsapi.org',
     });
   }
   return {};

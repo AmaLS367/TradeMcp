@@ -20,6 +20,9 @@ import {
     getCryptoPanicNews,
     getMessariTimeseries,
     getMessariTimeseriesCatalog,
+    getNewsApiSources,
+    getNewsApiTopHeadlines,
+    searchNewsApiArticles,
 } from './cryptoAnalysis.js';
 import {
     callMarketplaceTool,
@@ -47,6 +50,7 @@ import {
     getMarketDataCredentials,
     getMarketplaceMcpCredentials,
     getMessariCredentials,
+    getNewsApiCredentials,
 } from './mcpCredentials.js';
 
 const MAX_TOOL_RESPONSE_CHARS = 60_000;
@@ -216,6 +220,7 @@ const COINGECKO_TOOLS = new Set(['get_crypto_prices', 'get_crypto_markets', 'get
 const BINANCE_TOOLS = new Set(['get_binance_ticker', 'get_binance_order_book', 'get_binance_klines', 'get_binance_24h_stats']);
 const CRYPTOPANIC_TOOLS = new Set(['get_crypto_news']);
 const MESSARI_TOOLS = new Set(['ask_messari_research', 'get_messari_timeseries_catalog', 'get_messari_timeseries']);
+const NEWSAPI_TOOLS = new Set(['search_newsapi_articles', 'get_newsapi_top_headlines', 'get_newsapi_sources']);
 const MARKETDATA_TOOLS = new Set(['get_fx_quote', 'get_fx_candles', 'get_technical_indicator']);
 const OBSERVABILITY_TOOLS = new Set<string>([...OBSERVABILITY_MCP_TOOL_NAMES]);
 const NATIVE_TOOLS = new Set(['search', 'fetch', 'create_trade_proposal', 'list_exchange_methods', 'call_exchange_method', 'get_account_summary', ...OBSERVABILITY_MCP_TOOL_NAMES]);
@@ -227,6 +232,7 @@ function extractProviderFromToolName(toolName: string): string {
   if (BINANCE_TOOLS.has(toolName)) return 'binance';
   if (CRYPTOPANIC_TOOLS.has(toolName)) return 'cryptopanic';
   if (MESSARI_TOOLS.has(toolName)) return 'messari';
+  if (NEWSAPI_TOOLS.has(toolName)) return 'newsapi';
   if (MARKETDATA_TOOLS.has(toolName)) return 'marketdata';
   if (OBSERVABILITY_TOOLS.has(toolName)) return 'observability';
   if (NATIVE_TOOLS.has(toolName)) return 'native';
@@ -576,6 +582,56 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                             granularity: { type: "string", description: "Optional candle/metric granularity supported by the dataset." }
                         },
                         required: ["entityType", "entityIdentifier", "datasetSlug"]
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[12],
+                    description: "Use this when the user asks for general news article search across publishers, including crypto, macro, equities, politics, or company news. Uses the user's NewsAPI BYOK key and searches NewsAPI /v2/everything. For CryptoPanic sentiment filters, use get_crypto_news instead.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            q: { type: "string", description: "Keywords or NewsAPI advanced query. Supports quoted phrases and boolean operators supported by NewsAPI." },
+                            searchIn: { type: "array", items: { type: "string", enum: ["title", "description", "content"] }, description: "Optional fields to search, for example ['title', 'description']." },
+                            sources: { type: "array", items: { type: "string" }, description: "Optional NewsAPI source IDs, max 20." },
+                            domains: { type: "array", items: { type: "string" }, description: "Optional publisher domains such as coindesk.com." },
+                            excludeDomains: { type: "array", items: { type: "string" }, description: "Optional publisher domains to exclude." },
+                            from: { type: "string", description: "Optional ISO date or datetime lower bound." },
+                            to: { type: "string", description: "Optional ISO date or datetime upper bound." },
+                            language: { type: "string", description: "Optional ISO-639-1 language code, for example en." },
+                            sortBy: { type: "string", enum: ["relevancy", "popularity", "publishedAt"] },
+                            pageSize: { type: "number", description: "Articles per page, capped at 100." },
+                            page: { type: "number" }
+                        }
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[13],
+                    description: "Use this when the user asks for live top or breaking news headlines by country, category, source, or keyword. Uses the user's NewsAPI BYOK key and NewsAPI /v2/top-headlines.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            country: { type: "string", description: "Optional 2-letter country code, for example us." },
+                            category: { type: "string", enum: ["business", "entertainment", "general", "health", "science", "sports", "technology"] },
+                            sources: { type: "array", items: { type: "string" }, description: "Optional NewsAPI source IDs. Do not combine with country/category." },
+                            q: { type: "string", description: "Optional keyword or phrase." },
+                            pageSize: { type: "number", description: "Headlines per page, capped at 100." },
+                            page: { type: "number" }
+                        }
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[14],
+                    description: "Use this to list NewsAPI top-headlines source IDs before filtering headline or article searches by source. Uses the user's NewsAPI BYOK key.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            category: { type: "string", enum: ["business", "entertainment", "general", "health", "science", "sports", "technology"] },
+                            language: { type: "string", description: "Optional ISO-639-1 language code, for example en." },
+                            country: { type: "string", description: "Optional 2-letter country code, for example us." }
+                        }
                     },
                     annotations: { readOnlyHint: true },
                 },
@@ -1004,6 +1060,36 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
 
         if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[11]) {
             const result = await getMessariTimeseries((args || {}) as any, await getMessariCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[12]) {
+            const result = await searchNewsApiArticles((args || {}) as any, await getNewsApiCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[13]) {
+            const result = await getNewsApiTopHeadlines((args || {}) as any, await getNewsApiCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[14]) {
+            const result = await getNewsApiSources((args || {}) as any, await getNewsApiCredentials(userId));
             return {
                 content: [{
                     type: "text",
