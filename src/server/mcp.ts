@@ -139,12 +139,12 @@ async function userIdFromMcpRequest(req: express.Request) {
 
     const apiKey = getApiKey(req);
     if (!apiKey) {
-        throw new Error('Missing auth');
+        throw new Error('Authentication required. Provide an API key via the x-api-key header, a Bearer token in the Authorization header, or a ?key= query parameter. Generate an API key in the Trade MCP dashboard → Settings → API Keys.');
     }
 
     const snap = await db.collectionGroup('api_keys').where('key', '==', apiKey).limit(1).get();
     if (snap.empty) {
-        throw new Error('Invalid API key');
+        throw new Error('Invalid API key. Verify the key in the Trade MCP dashboard → Settings → API Keys, or generate a new one if it was revoked.');
     }
 
     return snap.docs[0].ref.parent.parent!.id;

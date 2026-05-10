@@ -666,7 +666,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 return {
                     content: [{
                         type: "text",
-                        text: `MCP marketplace server "${marketplaceTool.serverId}" is not connected. Enable it in the MCP Market panel first.`
+                        text: `MCP marketplace server "${marketplaceTool.serverId}" is not connected. To enable it: open the Trade MCP dashboard → go to MCP Market → find "${marketplaceTool.serverId}" → toggle Enable. After enabling, this tool will be available automatically.`
                     }],
                     isError: true,
                 };
@@ -708,14 +708,14 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 return {
                     content: [{
                         type: "text",
-                        text: "Trade MCP is connected. No dashboard user is bound to this public MCP endpoint yet, so account balances are unavailable."
+                        text: "Account summary requires a connected dashboard user. Generate an API key in the dashboard → Settings → API Keys, then pass it as a Bearer token or ?key= parameter."
                     }]
                 };
             }
 
             const connectionsSnap = await db.collection(`users/${userId}/exchange_connections`).where('isActive', '==', true).get();
             if (connectionsSnap.empty) {
-                return { content: [{ type: "text", text: "No active exchange connections found." }]};
+                return { content: [{ type: "text", text: "No active exchange connections found. Go to the Trade MCP dashboard → Exchanges → Add Connection → select Binance or Bybit → enter your API key and secret." }]};
             }
             
             const balances: any = {};
@@ -742,7 +742,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 return {
                     content: [{
                         type: "text",
-                        text: "Trade MCP is connected, but no dashboard user is bound to this public MCP endpoint. Trade proposals cannot be created until DEFAULT_MCP_USER_ID is configured on the server."
+                        text: "Trade proposals require authentication. Connect via OAuth or generate an API key in the dashboard → Settings → API Keys. After authenticating, retry the proposal."
                     }]
                 };
             }
@@ -763,7 +763,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
         if (name === "list_exchange_methods") {
             const provider = args?.provider;
             if (!isSupportedProvider(provider)) {
-                throw new Error('provider must be binance or bybit');
+                throw new Error(`Unsupported exchange provider: "${provider}". Supported providers are: binance, bybit. To add a new exchange, connect it in the dashboard → Exchanges → Add Connection. Example: { provider: 'binance' }`);
             }
 
             const exchange = await createExchange(provider, userId, (args?.options as Record<string, unknown>) || {});
@@ -793,7 +793,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
         if (name === "call_exchange_method") {
             const provider = args?.provider;
             if (!isSupportedProvider(provider)) {
-                throw new Error('provider must be binance or bybit');
+                throw new Error(`Unsupported exchange provider: "${provider}". Supported providers are: binance, bybit. To add a new exchange, connect it in the dashboard → Exchanges → Add Connection. Example: { provider: 'binance' }`);
             }
 
             const exchange = await createExchange(provider, userId, (args?.options as Record<string, unknown>) || {});
@@ -821,7 +821,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
 
         if (name === OBSERVABILITY_MCP_TOOL_NAMES[0]) {
             if (!userId) {
-                throw new Error('Observability metrics require an authenticated dashboard user.');
+                throw new Error('Observability metrics require authentication. Connect via OAuth or use an API key from the dashboard → Settings → API Keys.');
             }
             const since = typeof args?.since === 'string' ? new Date(args.since) : undefined;
             if (since && Number.isNaN(since.getTime())) {
@@ -836,7 +836,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
 
         if (name === OBSERVABILITY_MCP_TOOL_NAMES[1]) {
             if (!userId) {
-                throw new Error('Observability alerts require an authenticated dashboard user.');
+                throw new Error('Observability alerts require authentication. Connect via OAuth or use an API key from the dashboard → Settings → API Keys.');
             }
             const alerts = await getActiveAlerts(userId);
             return {
