@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, GithubAuthProvider, signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/card';
@@ -124,12 +124,21 @@ function AuthGuard() {
               <CardDescription>Your AI trading intelligence hub</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button 
-                className="w-full h-12 rounded-xl text-md font-semibold bg-primary hover:shadow-xl hover:shadow-primary/20 transition-all" 
+              <Button
+                className="w-full h-12 rounded-xl text-md font-semibold bg-primary hover:shadow-xl hover:shadow-primary/20 transition-all"
                 onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}
               >
                 Sign in with Google
               </Button>
+              <div className="mt-3">
+                <Button
+                  variant="secondary"
+                  className="w-full h-12 rounded-xl text-md font-semibold transition-all"
+                  onClick={() => signInWithPopup(auth, new GithubAuthProvider())}
+                >
+                  Sign in with GitHub
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </motion.div>
