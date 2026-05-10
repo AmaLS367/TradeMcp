@@ -31,5 +31,7 @@ export function shouldIncludeTool(name: string, profile?: string): boolean {
 
 export function isMarketplaceToolAllowed(_toolName: string, profile?: string): boolean {
   if (!profile || profile === 'full_access') return true;
+  if (profile === 'trading_review') return true;
+  if (profile === 'safe_research') return false;
   return true;
 }
