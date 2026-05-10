@@ -7,26 +7,26 @@ export interface ValidationResult {
 }
 
 /**
- * Валидация API ключей Binance через тестовый запрос к /api/v3/account
+ * Validate Binance API keys via a test request to /api/v3/account
  */
 async function validateBinanceKeys(apiKey: string, apiSecret: string): Promise<ValidationResult> {
   try {
     const timestamp = Date.now();
     const recvWindow = 5000;
     
-    // Параметры запроса
+    // Request parameters
     const params = new URLSearchParams({
       timestamp: timestamp.toString(),
       recvWindow: recvWindow.toString(),
     });
     
-    // Создаем подпись
+    // Create HMAC signature
     const signature = crypto
       .createHmac('sha256', apiSecret)
       .update(params.toString())
       .digest('hex');
     
-    // Формируем полный URL с подписью
+    // Build full URL with signature
     const url = `https://api.binance.com/api/v3/account?${params.toString()}&signature=${signature}`;
     
     const response = await axios.get(url, {
@@ -37,7 +37,7 @@ async function validateBinanceKeys(apiKey: string, apiSecret: string): Promise<V
       timeout: 10000,
     });
     
-    // Проверяем структуру ответа (должны быть поля makerCommission, balances и т.д.)
+    // Check response structure (must have makerCommission, balances, etc.)
     if (response.data && typeof response.data === 'object') {
       const hasRequiredFields = 
         'makerCommission' in response.data &&
@@ -48,71 +48,71 @@ async function validateBinanceKeys(apiKey: string, apiSecret: string): Promise<V
       if (hasRequiredFields) {
         return { valid: true };
       } else {
-        return { valid: false, error: 'Неожиданная структура ответа от Binance' };
+        return { valid: false, error: 'Unexpected response structure from Binance' };
       }
     }
     
-    return { valid: false, error: 'Некорректный ответ от Binance' };
+    return { valid: false, error: 'Invalid response from Binance' };
   } catch (error: any) {
     if (error.response) {
       const status = error.response.status;
       const data = error.response.data;
       
-      // Специфические ошибки Binance
+      // Binance-specific errors
       if (status === 401) {
         if (data?.code === -2015) {
-          return { valid: false, error: 'Неверный API ключ или секрет' };
+          return { valid: false, error: 'Invalid API key or secret' };
         }
         if (data?.code === -2014) {
-          return { valid: false, error: 'API ключ не активирован или истёк' };
+          return { valid: false, error: 'API key not activated or expired' };
         }
         if (data?.code === -2008) {
-          return { valid: false, error: 'Неверная подпись запроса' };
+          return { valid: false, error: 'Invalid request signature' };
         }
-        return { valid: false, error: 'Ошибка авторизации (401)' };
+        return { valid: false, error: 'Authorization error (401)' };
       }
       
       if (status === 403) {
         if (data?.code === -2011) {
-          return { valid: false, error: 'API ключ не существует' };
+          return { valid: false, error: 'API key does not exist' };
         }
-        return { valid: false, error: 'Доступ запрещён (возможно, ограничение по IP)' };
+        return { valid: false, error: 'Access denied (possible IP restriction)' };
       }
       
       if (status === 429) {
-        return { valid: false, error: 'Превышен лимит запросов к Binance' };
+        return { valid: false, error: 'Binance rate limit exceeded' };
       }
       
-      return { valid: false, error: `Ошибка Binance: ${data?.msg || status}` };
+      return { valid: false, error: `Binance error: ${data?.msg || status}` };
     }
     
     if (error.code === 'ECONNABORTED') {
-      return { valid: false, error: 'Таймаут соединения с Binance' };
+      return { valid: false, error: 'Binance connection timeout' };
     }
     
-    return { valid: false, error: `Ошибка сети: ${error.message}` };
+    return { valid: false, error: `Network error: ${error.message}` };
   }
 }
 
 /**
- * Валидация API ключей Bybit через тестовый запрос к /v5/account/wallet-balance
+ * Validate Bybit API keys via a test request to /v5/account/wallet-balance
  */
 async function validateBybitKeys(apiKey: string, apiSecret: string): Promise<ValidationResult> {
   try {
     const timestamp = Date.now();
     const recvWindow = 5000;
     
-    // Параметры для строки подписи
+    // Parameters for the signature string
     const params = {
       category: 'UNIFIED',
       accountType: 'UNIFIED',
     };
     
-    // Строка для подписи: timestamp + apiKey + recvWindow + queryString
+    // String to sign: timestamp + apiKey + recvWindow + queryString
     const queryString = new URLSearchParams(params).toString();
     const signStr = `${timestamp}${apiKey}${recvWindow}${queryString}`;
     
-    // Создаем подпись
+    // Create HMAC signature
     const signature = crypto
       .createHmac('sha256', apiSecret)
       .update(signStr)
@@ -135,77 +135,77 @@ async function validateBybitKeys(apiKey: string, apiSecret: string): Promise<Val
       timeout: 10000,
     });
     
-    // Проверяем структуру ответа Bybit
+    // Check Bybit response structure
     if (response.data && response.data.retCode === 0) {
       if (response.data.result && Array.isArray(response.data.result.list)) {
         return { valid: true };
       }
-      return { valid: false, error: 'Неожиданная структура ответа от Bybit' };
+      return { valid: false, error: 'Unexpected response structure from Bybit' };
     }
     
-    // Если retCode !== 0, значит ошибка
-    const retMsg = response.data?.retMsg || 'Неизвестная ошибка';
+    // If retCode !== 0, it's an error
+    const retMsg = response.data?.retMsg || 'Unknown error';
     return { valid: false, error: `Bybit: ${retMsg}` };
   } catch (error: any) {
     if (error.response) {
       const status = error.response.status;
       const data = error.response.data;
       
-      // Специфические ошибки Bybit
+      // Bybit-specific errors
       if (data?.retCode === 10003) {
-        return { valid: false, error: 'Неверный API ключ, ключ не существует' };
+        return { valid: false, error: 'Invalid API key, key does not exist' };
       }
       if (data?.retCode === 10006) {
-        return { valid: false, error: 'Неверная подпись запроса' };
+        return { valid: false, error: 'Invalid request signature' };
       }
       if (data?.retCode === 10001) {
-        return { valid: false, error: 'Параметры запроса неверны' };
+        return { valid: false, error: 'Invalid request parameters' };
       }
       if (data?.retCode === 10017) {
-        return { valid: false, error: 'Запрос отклонён из-за лимита скорости' };
+        return { valid: false, error: 'Request rejected due to rate limit' };
       }
       
       const retMsg = data?.retMsg || data?.message || status;
-      return { valid: false, error: `Ошибка Bybit: ${retMsg}` };
+      return { valid: false, error: `Bybit error: ${retMsg}` };
     }
     
     if (error.code === 'ECONNABORTED') {
-      return { valid: false, error: 'Таймаут соединения с Bybit' };
+      return { valid: false, error: 'Bybit connection timeout' };
     }
     
-    return { valid: false, error: `Ошибка сети: ${error.message}` };
+    return { valid: false, error: `Network error: ${error.message}` };
   }
 }
 
 /**
- * Основная функция валидации ключей
+ * Main exchange key validation entry point
  */
 export async function validateExchangeKeys(
   exchange: 'binance' | 'bybit',
   apiKey: string,
   apiSecret: string
 ): Promise<ValidationResult> {
-  // Минимальная форматная проверка
+  // Basic format validation
   if (!apiKey || !apiSecret) {
-    return { valid: false, error: 'API ключ и секрет не могут быть пустыми' };
+    return { valid: false, error: 'API key and secret cannot be empty' };
   }
   
   if (apiKey.length < 10 || apiSecret.length < 10) {
-    return { valid: false, error: 'API ключ или секрет слишком короткие' };
+    return { valid: false, error: 'API key or secret is too short' };
   }
   
-  // Проверка на допустимые символы (базовая)
+  // Basic allowed-characters check
   const validCharsRegex = /^[a-zA-Z0-9\-_]+$/;
   if (!validCharsRegex.test(apiKey) || !validCharsRegex.test(apiSecret)) {
-    return { valid: false, error: 'API ключ или секрет содержат недопустимые символы' };
+    return { valid: false, error: 'API key or secret contains invalid characters' };
   }
   
-  // Функциональная валидация через запрос к бирже
+  // Functional validation via exchange API call
   if (exchange === 'binance') {
     return validateBinanceKeys(apiKey, apiSecret);
   } else if (exchange === 'bybit') {
     return validateBybitKeys(apiKey, apiSecret);
   }
   
-  return { valid: false, error: 'Неподдерживаемая биржа' };
+  return { valid: false, error: 'Unsupported exchange' };
 }
