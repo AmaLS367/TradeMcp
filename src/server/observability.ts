@@ -106,6 +106,7 @@ export type ToolMetrics = {
   clientDistribution: { clientType: string; calls: number }[];
   recentOrderEvents: {
     id: string;
+    proposalId?: string;
     symbol: string;
     side: string;
     eventType: string;
@@ -151,6 +152,28 @@ function finiteNumber(value: unknown): number {
 
 function stringValue(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
+}
+
+type RecentOrderEvent = ToolMetrics['recentOrderEvents'][number];
+
+export function collapseRecentOrderEvents(events: RecentOrderEvent[]): RecentOrderEvent[] {
+  const latestByProposal = new Map<string, RecentOrderEvent>();
+  const passthrough: RecentOrderEvent[] = [];
+
+  for (const event of events) {
+    if (!event.proposalId) {
+      passthrough.push(event);
+      continue;
+    }
+
+    const current = latestByProposal.get(event.proposalId);
+    if (!current || event.timestamp > current.timestamp) {
+      latestByProposal.set(event.proposalId, event);
+    }
+  }
+
+  return [...latestByProposal.values(), ...passthrough]
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 }
 
 export async function getToolMetrics(userId: string, since?: Date): Promise<ToolMetrics> {
@@ -258,14 +281,15 @@ async function getRecentOrderEvents(userId: string): Promise<ToolMetrics['recent
     const snapshot = await db.collection('order_events')
       .where('userId', '==', userId)
       .orderBy('timestamp', 'desc')
-      .limit(20)
+      .limit(100)
       .get();
 
-    return snapshot.docs.map((doc) => {
+    const events = snapshot.docs.map((doc) => {
       const data = doc.data();
       const price = finiteNumber(data.price);
       return {
         id: doc.id,
+        proposalId: stringValue(data.proposalId) || undefined,
         symbol: stringValue(data.symbol, 'unknown'),
         side: stringValue(data.side, 'unknown'),
         eventType: stringValue(data.eventType, 'unknown'),
@@ -275,6 +299,8 @@ async function getRecentOrderEvents(userId: string): Promise<ToolMetrics['recent
         timestamp: stringValue(data.timestamp),
       };
     });
+
+    return collapseRecentOrderEvents(events).slice(0, 20);
   } catch (err) {
     logger.warn({ err, userId }, 'Failed to fetch recent order events');
     return [];

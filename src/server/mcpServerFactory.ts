@@ -234,6 +234,15 @@ function extractProviderFromToolName(toolName: string): string {
   return 'unknown';
 }
 
+export function resolveToolCallProvider(toolName: string, args?: Record<string, unknown>): string {
+  if ((toolName === 'call_exchange_method' || toolName === 'list_exchange_methods' || toolName === 'create_trade_proposal')
+    && isSupportedProvider(args?.provider)) {
+    return args.provider;
+  }
+
+  return extractProviderFromToolName(toolName);
+}
+
 export function createMcpServer(userId: string | null, profile?: string, clientType: ClientType = 'unknown') {
     const server = new Server({
         name: "TradeMCPServer",
@@ -633,7 +642,10 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 throw err;
             } finally {
                 const latencyMs = Date.now() - startTime;
-                const provider = extractProviderFromToolName(toolName);
+                const provider = resolveToolCallProvider(
+                    toolName,
+                    request.params.arguments as Record<string, unknown> | undefined,
+                );
 
                 logToolCall({
                     userId: userId || '',
