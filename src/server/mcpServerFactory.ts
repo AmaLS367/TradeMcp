@@ -277,7 +277,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 },
                 {
                     name: "create_trade_proposal",
-                    description: "Use this only when the user explicitly asks to prepare or stage a Binance/Bybit trade. It creates a pending proposal for human approval in the Trade MCP dashboard and never executes the order directly. Do not use for market analysis, price checks, or immediate execution.",
+                    description: "Use this only when the user explicitly asks to prepare or stage a Binance/Bybit trade. It creates a pending proposal for human approval in the Trade MCP dashboard and never executes the order directly. Do not use for market analysis, price checks, or immediate execution.\n\nExample: create_trade_proposal({ provider: 'binance', symbol: 'BTC/USDT', side: 'buy', orderType: 'limit', quantity: 0.01, price: 95000, rationale: 'Buy BTC on dip' })",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -418,7 +418,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[0],
-                    description: "Use this when the user asks for current crypto spot prices across one or more CoinGecko coin IDs. Uses the user's CoinGecko BYOK API key from Market Data Providers. For public CoinGecko MCP docs/search, use coingecko_public__ tools instead.",
+                    description: "Use this when the user asks for current crypto spot prices across one or more CoinGecko coin IDs. Uses the user's CoinGecko BYOK API key from Market Data Providers. For public CoinGecko MCP docs/search, use coingecko_public__ tools instead.\n\nExample: get_crypto_prices({ ids: ['bitcoin', 'ethereum'], vs_currencies: ['usd', 'eur'], include_24hr_change: true })",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -434,7 +434,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[1],
-                    description: "Use this when the user asks for crypto market rankings, top coins, market caps, volume, or category-level market snapshots. Uses the user's CoinGecko BYOK API key. Do not use for a single exchange order book.",
+                    description: "Use this when the user asks for crypto market rankings, top coins, market caps, volume, or category-level market snapshots. Uses the user's CoinGecko BYOK API key. Do not use for a single exchange order book.\n\nExample: get_crypto_markets({ vs_currency: 'usd', category: 'layer-1', order: 'market_cap_desc', per_page: 10 })",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -471,7 +471,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 },
                 {
                     name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[4],
-                    description: "Use this when the user asks for the current public Binance ticker or last price for an exchange symbol. Does not require user Binance keys. Prefer this over CoinGecko when the user specifically asks about Binance market data.",
+                    description: "Use this when the user asks for the current public Binance ticker or last price for an exchange symbol. Does not require user Binance keys. Prefer this over CoinGecko when the user specifically asks about Binance market data.\n\nExample: get_binance_ticker({ symbol: 'BTC/USDT' })",
                     inputSchema: {
                         type: "object",
                         properties: { symbol: { type: "string", description: "Binance exchange symbol, for example BTC/USDT. Use slash format." } },

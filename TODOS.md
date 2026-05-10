@@ -51,7 +51,7 @@
 - Add better mobile layout for dense provider and marketplace cards.
 - Add a user-facing activity timeline.
 
-## Observability
+## Observability - выполнено
 
 - Log MCP tool calls with user id, client type, tool name, latency, and result status.
 - Detect client type from headers where possible.
