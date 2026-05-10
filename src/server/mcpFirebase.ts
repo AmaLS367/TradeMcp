@@ -7,11 +7,11 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function loadFirebaseConfig() {
-  const configPath = path.resolve(__dirname, '../../firebase-applet-config.json');
+  const configPath = path.resolve(__dirname, '../firebase-applet-config.json');
   if (fs.existsSync(configPath)) {
     return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
   }
-  const examplePath = path.resolve(__dirname, '../../firebase-applet-config.example.json');
+  const examplePath = path.resolve(__dirname, '../firebase-applet-config.example.json');
   if (fs.existsSync(examplePath)) {
     return JSON.parse(fs.readFileSync(examplePath, 'utf-8'));
   }
