@@ -344,6 +344,13 @@ const oauthMiddleware = requireBearerAuth({
     resourceMetadataUrl,
 });
 
+const maybeOauthMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (getApiKey(req)) {
+        return next();
+    }
+    return oauthMiddleware(req, res, next);
+};
+
 // Middleware to verify Firebase ID Token
 export async function verifyAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
     const authHeader = req.headers.authorization;
@@ -670,7 +677,7 @@ mcpRouter.post('/observability/alerts/:id/resolve', verifyAuth, async (req, res)
     }
 });
 
-mcpRouter.post('/', oauthMiddleware, async (req, res) => {
+mcpRouter.post('/', maybeOauthMiddleware, async (req, res) => {
     let server: Server | undefined;
     let transport: StreamableHTTPServerTransport | undefined;
 
@@ -705,7 +712,7 @@ mcpRouter.post('/', oauthMiddleware, async (req, res) => {
     }
 });
 
-mcpRouter.get('/', oauthMiddleware, (_req, res) => {
+mcpRouter.get('/', maybeOauthMiddleware, (_req, res) => {
     res.status(405).json({
         jsonrpc: "2.0",
         error: {
@@ -716,7 +723,7 @@ mcpRouter.get('/', oauthMiddleware, (_req, res) => {
     });
 });
 
-mcpRouter.get('/sse', oauthMiddleware, async (req, res) => {
+mcpRouter.get('/sse', maybeOauthMiddleware, async (req, res) => {
     try {
         const userId = await userIdFromMcpRequest(req);
         const profile = typeof req.query.profile === 'string' ? req.query.profile : undefined;
