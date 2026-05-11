@@ -121,7 +121,22 @@ export function getTechnicalIndicatorCatalog() {
         provider: 'binance',
         assetClass: 'crypto',
         symbolFormat: 'BASE/QUOTE, for example BTC/USDT',
-        note: 'Use this as a fallback for crypto OHLCV when TAAPI.IO is not connected or when raw candles are needed.',
+        note: 'Use this for raw crypto OHLCV candles when the user needs candle data directly.',
+      },
+      calculate_indicators: {
+        provider: 'binance',
+        source: 'local_calculation',
+        assetClass: 'crypto',
+        symbolFormat: 'BASE/QUOTE, for example AAVE/USDT or BTC/USDT',
+        requiredParams: ['symbol', 'indicators'],
+        optionalParams: ['interval', 'limit'],
+        defaultInterval: '1h',
+        intervals: ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M'],
+        indicators: [
+          { id: 'rsi', label: 'Relative Strength Index', commonParams: ['period'], defaults: { period: 14 } },
+          { id: 'macd', label: 'Moving Average Convergence Divergence', commonParams: ['fastPeriod', 'slowPeriod', 'signalPeriod'], defaults: { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 } },
+        ],
+        note: 'Preferred crypto indicator tool. Fetches Binance candles and calculates indicators inside TradeMCP, without TAAPI.IO or another paid provider.',
       },
       get_taapi_indicator: {
         provider: 'taapi',
@@ -149,9 +164,9 @@ export function getTechnicalIndicatorCatalog() {
       },
     },
     routing: [
-      'For crypto RSI, MACD, EMA, SMA, Bollinger Bands, ATR, ADX, stochastic, or other named indicators, prefer get_taapi_indicator or get_taapi_bulk_indicators when TAAPI.IO is connected.',
+      'For crypto RSI and MACD, prefer calculate_indicators. It is free and computes from Binance OHLCV inside TradeMCP.',
+      'For crypto indicators that TradeMCP does not calculate locally yet, use get_binance_klines and compute from OHLCV or fall back to get_taapi_indicator/get_taapi_bulk_indicators only when the user has connected TAAPI.IO.',
       'For forex RSI, MACD, SMA, EMA, Bollinger Bands, ATR, ADX, or stochastic, call get_technical_indicator with a Twelve Data key.',
-      'If TAAPI.IO is not connected or the plan does not cover the symbol/exchange, fetch candles with get_binance_klines and compute the indicator from OHLCV.',
       'For current crypto price, liquidity, spread, or volume context, combine get_binance_ticker, get_binance_24h_stats, and get_binance_order_book.',
     ],
   };

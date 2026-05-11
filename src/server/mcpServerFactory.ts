@@ -9,6 +9,7 @@ import { logToolCall, checkAlertConditions, getToolMetrics, getActiveAlerts } fr
 import {
     CRYPTO_ANALYSIS_MCP_TOOL_NAMES,
     askMessariResearch,
+    calculateTechnicalIndicators,
     getBinance24hStats,
     getBinanceKlines,
     getBinanceOrderBook,
@@ -220,7 +221,7 @@ async function isMarketplaceServerEnabled(userId: string | null, serverId: McpMa
 }
 
 const COINGECKO_TOOLS = new Set(['get_crypto_prices', 'get_crypto_markets', 'get_crypto_market_chart', 'get_crypto_trending']);
-const BINANCE_TOOLS = new Set(['get_binance_ticker', 'get_binance_order_book', 'get_binance_klines', 'get_binance_24h_stats']);
+const BINANCE_TOOLS = new Set(['get_binance_ticker', 'get_binance_order_book', 'get_binance_klines', 'get_binance_24h_stats', 'calculate_indicators']);
 const CRYPTOPANIC_TOOLS = new Set(['get_crypto_news']);
 const MESSARI_TOOLS = new Set(['ask_messari_research', 'get_messari_timeseries_catalog', 'get_messari_timeseries']);
 const NEWSAPI_TOOLS = new Set(['search_newsapi_articles', 'get_newsapi_top_headlines', 'get_newsapi_sources']);
@@ -262,7 +263,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
         capabilities: {
             tools: {}
         },
-        instructions: "Trade MCP exposes market data, crypto research, ready TAAPI.IO crypto indicators, exchange account reads, human-approved trade proposal tools, and raw Binance/Bybit CCXT API access for the authenticated dashboard user. Before deep crypto fundamental or technical analysis, call get_trademcp_research_guide to choose the correct tool sequence and source-priority rules. list_exchange_methods and call_exchange_method are available in every client profile and can call public, private, trading, transfer, and raw endpoint methods when the user's exchange connection has permissions."
+        instructions: "Trade MCP exposes market data, crypto research, locally calculated crypto technical indicators from Binance candles, exchange account reads, human-approved trade proposal tools, and raw Binance/Bybit CCXT API access for the authenticated dashboard user. Before deep crypto fundamental or technical analysis, call get_trademcp_research_guide to choose the correct tool sequence and source-priority rules. list_exchange_methods and call_exchange_method are available in every client profile and can call public, private, trading, transfer, and raw endpoint methods when the user's exchange connection has permissions."
     });
 
     server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -687,6 +688,42 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                                     },
                                     required: ["indicator"],
                                     additionalProperties: true,
+                                },
+                            },
+                        },
+                        required: ["symbol", "indicators"]
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: CRYPTO_ANALYSIS_MCP_TOOL_NAMES[17],
+                    description: "Use this by default for crypto technical analysis when the user asks for RSI, MACD, or a quick local indicator snapshot for a pair like AAVE/USDT. Fetches free Binance OHLCV candles and calculates indicators inside TradeMCP, without TAAPI.IO or any paid indicator provider.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            symbol: { type: "string", description: "Crypto pair as BASE/QUOTE or compact BASEQUOTE, for example AAVE/USDT, AAVEUSDT, or BTC/USDT." },
+                            interval: { type: "string", description: "Binance timeframe such as 1m, 5m, 15m, 30m, 1h, 4h, 1d. Defaults to 1h." },
+                            limit: { type: "number", description: "Number of Binance candles to fetch, capped at 1000. Defaults to 100." },
+                            indicators: {
+                                type: "array",
+                                description: "Indicators to calculate locally. Use strings like ['rsi', 'macd'] or objects such as { indicator: 'rsi', period: 14 } and { indicator: 'macd', fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 }.",
+                                items: {
+                                    anyOf: [
+                                        { type: "string", enum: ["rsi", "macd"] },
+                                        {
+                                            type: "object",
+                                            properties: {
+                                                id: { type: "string" },
+                                                indicator: { type: "string", enum: ["rsi", "macd"] },
+                                                period: { type: "number" },
+                                                fastPeriod: { type: "number" },
+                                                slowPeriod: { type: "number" },
+                                                signalPeriod: { type: "number" },
+                                            },
+                                            required: ["indicator"],
+                                            additionalProperties: false,
+                                        },
+                                    ],
                                 },
                             },
                         },
@@ -1180,6 +1217,17 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
 
         if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[16]) {
             const result = await getTaapiBulkIndicators((args || {}) as any, await getTaapiCredentials(userId));
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === CRYPTO_ANALYSIS_MCP_TOOL_NAMES[17]) {
+            const exchange = await createExchange('binance', null);
+            const result = await calculateTechnicalIndicators(exchange, (args || {}) as any);
             return {
                 content: [{
                     type: "text",

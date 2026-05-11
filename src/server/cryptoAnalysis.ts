@@ -45,6 +45,7 @@ export const CRYPTO_ANALYSIS_MCP_TOOL_NAMES = [
   'get_newsapi_sources',
   'get_taapi_indicator',
   'get_taapi_bulk_indicators',
+  'calculate_indicators',
 ] as const;
 
 export type CoinGeckoCredentials = {
@@ -76,6 +77,17 @@ type PublicBinanceExchange = {
   fetchTickers(): Promise<unknown>;
   fetchOrderBook(symbol: string, limit?: number): Promise<unknown>;
   fetchOHLCV(symbol: string, timeframe?: string, since?: number, limit?: number): Promise<unknown>;
+};
+
+type LocalIndicatorName = 'rsi' | 'macd';
+
+type NormalizedLocalIndicator = {
+  id: string;
+  indicator: LocalIndicatorName;
+  period?: number;
+  fastPeriod?: number;
+  slowPeriod?: number;
+  signalPeriod?: number;
 };
 
 type FetchInit = {
@@ -239,6 +251,137 @@ export function normalizeBinanceDepthLimit(limit: unknown) {
   return normalizePositiveInteger(limit, 100, 5000);
 }
 
+export function normalizeCryptoPairSymbol(symbol: unknown) {
+  const raw = requireString(symbol, 'symbol').toUpperCase().replace(/[\s_-]/g, '/');
+  if (raw.includes('/')) {
+    const [base, quote, ...rest] = raw.split('/').filter(Boolean);
+    if (!base || !quote || rest.length) {
+      throw new Error('symbol must be a crypto pair like AAVE/USDT or AAVEUSDT');
+    }
+    return `${base}/${quote}`;
+  }
+
+  const quote = ['USDT', 'USDC', 'USD', 'BTC', 'ETH', 'EUR'].find((item) => raw.endsWith(item));
+  if (!quote || raw.length <= quote.length) {
+    throw new Error('symbol must be a crypto pair like AAVE/USDT or AAVEUSDT');
+  }
+  return `${raw.slice(0, -quote.length)}/${quote}`;
+}
+
+function normalizeLocalIndicatorName(value: unknown): LocalIndicatorName {
+  const indicator = requireString(value, 'indicator').toLowerCase();
+  if (indicator !== 'rsi' && indicator !== 'macd') {
+    throw new Error('indicator must be one of: rsi, macd');
+  }
+  return indicator;
+}
+
+function normalizeLocalIndicator(value: unknown): NormalizedLocalIndicator {
+  if (typeof value === 'string') {
+    const indicator = normalizeLocalIndicatorName(value);
+    return { id: indicator, indicator };
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('indicators must contain strings or objects with an indicator field');
+  }
+
+  const input = value as Record<string, unknown>;
+  const indicator = normalizeLocalIndicatorName(input.indicator);
+  return {
+    id: typeof input.id === 'string' && input.id.trim() ? input.id.trim() : indicator,
+    indicator,
+    period: input.period === undefined ? undefined : normalizePositiveInteger(input.period, 14, 5000),
+    fastPeriod: input.fastPeriod === undefined ? undefined : normalizePositiveInteger(input.fastPeriod, 12, 5000),
+    slowPeriod: input.slowPeriod === undefined ? undefined : normalizePositiveInteger(input.slowPeriod, 26, 5000),
+    signalPeriod: input.signalPeriod === undefined ? undefined : normalizePositiveInteger(input.signalPeriod, 9, 5000),
+  };
+}
+
+function normalizeLocalIndicators(value: unknown): NormalizedLocalIndicator[] {
+  if (!Array.isArray(value) || !value.length) {
+    throw new Error('indicators must be a non-empty array');
+  }
+  return value.map(normalizeLocalIndicator);
+}
+
+function normalizeClosePrices(candles: unknown): number[] {
+  if (!Array.isArray(candles)) {
+    throw new Error('Binance klines response must be an array');
+  }
+
+  return candles.map((candle, index) => {
+    const close = Array.isArray(candle)
+      ? candle[4]
+      : candle && typeof candle === 'object'
+        ? (candle as Record<string, unknown>).close
+        : undefined;
+    const value = Number(close);
+    if (!Number.isFinite(value)) {
+      throw new Error(`kline at index ${index} does not contain a numeric close price`);
+    }
+    return value;
+  });
+}
+
+export function calculateRsi(closes: number[], period = 14) {
+  if (closes.length < period + 1) {
+    throw new Error(`RSI requires at least ${period + 1} close prices`);
+  }
+
+  const deltas = closes.slice(1).map((close, index) => close - closes[index]);
+  const gains = deltas.map((delta) => (delta > 0 ? delta : 0));
+  const losses = deltas.map((delta) => (delta < 0 ? -delta : 0));
+
+  let avgGain = gains.slice(0, period).reduce((sum, value) => sum + value, 0) / period;
+  let avgLoss = losses.slice(0, period).reduce((sum, value) => sum + value, 0) / period;
+
+  for (let index = period; index < gains.length; index += 1) {
+    avgGain = (avgGain * (period - 1) + gains[index]) / period;
+    avgLoss = (avgLoss * (period - 1) + losses[index]) / period;
+  }
+
+  if (avgLoss === 0) return avgGain === 0 ? 50 : 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}
+
+function calculateEmaSeries(values: number[], period: number) {
+  if (!values.length) {
+    throw new Error('EMA requires at least one value');
+  }
+  const smoothing = 2 / (period + 1);
+  const result: number[] = [values[0]];
+  for (const value of values.slice(1)) {
+    result.push(value * smoothing + result[result.length - 1] * (1 - smoothing));
+  }
+  return result;
+}
+
+export function calculateMacd(closes: number[], fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+  if (fastPeriod >= slowPeriod) {
+    throw new Error('MACD fastPeriod must be less than slowPeriod');
+  }
+  if (closes.length < slowPeriod + signalPeriod) {
+    throw new Error(`MACD requires at least ${slowPeriod + signalPeriod} close prices`);
+  }
+
+  const fastEma = calculateEmaSeries(closes, fastPeriod);
+  const slowEma = calculateEmaSeries(closes, slowPeriod);
+  const macdSeries = fastEma.map((value, index) => value - slowEma[index]);
+  const signalSeries = calculateEmaSeries(macdSeries, signalPeriod);
+  const macd = macdSeries[macdSeries.length - 1];
+  const signal = signalSeries[signalSeries.length - 1];
+
+  return {
+    macd,
+    signal,
+    histogram: macd - signal,
+    fastPeriod,
+    slowPeriod,
+    signalPeriod,
+  };
+}
+
 export async function getBinanceTicker(exchange: PublicBinanceExchange, args: Record<string, unknown>) {
   const symbol = requireString(args.symbol, 'symbol');
   return { provider: 'binance', symbol, data: await exchange.fetchTicker(symbol) };
@@ -255,6 +398,45 @@ export async function getBinanceKlines(exchange: PublicBinanceExchange, args: Re
   const timeframe = normalizeBinanceKlineInterval(args.interval || args.timeframe);
   const limit = normalizePositiveInteger(args.limit, 100, 1000);
   return { provider: 'binance', symbol, interval: timeframe, data: await exchange.fetchOHLCV(symbol, timeframe, undefined, limit) };
+}
+
+export async function calculateTechnicalIndicators(exchange: PublicBinanceExchange, args: Record<string, unknown>) {
+  const symbol = normalizeCryptoPairSymbol(args.symbol);
+  const interval = normalizeBinanceKlineInterval(args.interval || args.timeframe);
+  const indicators = normalizeLocalIndicators(args.indicators);
+  const limit = normalizePositiveInteger(args.limit, 100, 1000);
+  const candles = await exchange.fetchOHLCV(symbol, interval, undefined, limit);
+  const closes = normalizeClosePrices(candles);
+  const results: Record<string, unknown> = {};
+
+  for (const item of indicators) {
+    if (item.indicator === 'rsi') {
+      const period = item.period ?? 14;
+      const value = calculateRsi(closes, period);
+      results[item.id] = {
+        indicator: 'rsi',
+        value,
+        period,
+        signal: value < 30 ? 'oversold' : value > 70 ? 'overbought' : 'neutral',
+      };
+      continue;
+    }
+
+    results[item.id] = {
+      indicator: 'macd',
+      ...calculateMacd(closes, item.fastPeriod ?? 12, item.slowPeriod ?? 26, item.signalPeriod ?? 9),
+    };
+  }
+
+  return {
+    provider: 'binance',
+    source: 'local_calculation',
+    symbol,
+    interval,
+    candleCount: closes.length,
+    latestClose: closes[closes.length - 1],
+    indicators: results,
+  };
 }
 
 export async function getBinance24hStats(exchange: PublicBinanceExchange, args: Record<string, unknown>) {
@@ -371,20 +553,7 @@ function taapiAuth(credentials: TaapiCredentials) {
 }
 
 export function normalizeTaapiSymbol(symbol: unknown) {
-  const raw = requireString(symbol, 'symbol').toUpperCase().replace(/[\s_-]/g, '/');
-  if (raw.includes('/')) {
-    const [base, quote, ...rest] = raw.split('/').filter(Boolean);
-    if (!base || !quote || rest.length) {
-      throw new Error('symbol must be a crypto pair like AAVE/USDT or AAVEUSDT');
-    }
-    return `${base}/${quote}`;
-  }
-
-  const quote = ['USDT', 'USDC', 'USD', 'BTC', 'ETH', 'EUR'].find((item) => raw.endsWith(item));
-  if (!quote || raw.length <= quote.length) {
-    throw new Error('symbol must be a crypto pair like AAVE/USDT or AAVEUSDT');
-  }
-  return `${raw.slice(0, -quote.length)}/${quote}`;
+  return normalizeCryptoPairSymbol(symbol);
 }
 
 function normalizeTaapiExchange(exchange: unknown) {

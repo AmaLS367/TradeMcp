@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildCoinGeckoMarketsRequest,
   buildCoinGeckoPriceRequest,
@@ -8,6 +8,9 @@ import {
   buildNewsApiEverythingRequest,
   buildNewsApiSourcesRequest,
   buildNewsApiTopHeadlinesRequest,
+  calculateMacd,
+  calculateRsi,
+  calculateTechnicalIndicators,
   buildTaapiBulkIndicatorRequest,
   buildTaapiIndicatorRequest,
   normalizeTaapiSymbol,
@@ -49,6 +52,82 @@ describe('crypto analysis helpers', () => {
     expect(normalizeBinanceKlineInterval('1hour')).toBe('1h');
     expect(normalizeBinanceDepthLimit(9999)).toBe(5000);
     expect(() => normalizeBinanceKlineInterval('13m')).toThrow('interval must be one of');
+  });
+
+  it('calculates RSI and MACD from close prices without an external indicator provider', () => {
+    const closes = [
+      100, 101, 102, 101, 103, 105, 104, 106, 108, 107,
+      109, 111, 112, 110, 113, 115, 114, 116, 118, 117,
+      119, 121, 120, 122, 124, 123, 125, 127, 126, 128,
+      130, 129, 131, 133, 132,
+    ];
+
+    expect(calculateRsi(closes, 14)).toBeCloseTo(77.76, 2);
+    expect(calculateMacd(closes)).toMatchObject({
+      macd: expect.closeTo(6.00, 2),
+      signal: expect.closeTo(5.62, 2),
+      histogram: expect.closeTo(0.38, 2),
+    });
+  });
+
+  it('fetches Binance klines and returns requested locally calculated indicators', async () => {
+    const closes = [
+      100, 101, 102, 101, 103, 105, 104, 106, 108, 107,
+      109, 111, 112, 110, 113, 115, 114, 116, 118, 117,
+      119, 121, 120, 122, 124, 123, 125, 127, 126, 128,
+      130, 129, 131, 133, 132,
+    ];
+    const exchange = {
+      fetchOHLCV: vi.fn(async () => closes.map((close, index) => [
+        1710000000000 + index * 3600000,
+        close - 1,
+        close + 1,
+        close - 2,
+        close,
+        1000 + index,
+      ])),
+    } as any;
+
+    const result = await calculateTechnicalIndicators(exchange, {
+      symbol: 'AAVE/USDT',
+      interval: '1h',
+      indicators: ['rsi', 'macd'],
+    });
+
+    expect(exchange.fetchOHLCV).toHaveBeenCalledWith('AAVE/USDT', '1h', undefined, 100);
+    expect(result).toMatchObject({
+      provider: 'binance',
+      source: 'local_calculation',
+      symbol: 'AAVE/USDT',
+      interval: '1h',
+      candleCount: closes.length,
+      indicators: {
+        rsi: {
+          value: expect.closeTo(77.76, 2),
+          signal: 'overbought',
+        },
+        macd: {
+          macd: expect.closeTo(6.00, 2),
+          signal: expect.closeTo(5.62, 2),
+          histogram: expect.closeTo(0.38, 2),
+        },
+      },
+    });
+  });
+
+  it('normalizes compact crypto symbols before local indicator calculation', async () => {
+    const closes = Array.from({ length: 40 }, (_, index) => 100 + index);
+    const exchange = {
+      fetchOHLCV: vi.fn(async () => closes.map((close) => [1710000000000, close, close, close, close, 1000])),
+    } as any;
+
+    await calculateTechnicalIndicators(exchange, {
+      symbol: 'AAVEUSDT',
+      interval: '1h',
+      indicators: ['rsi'],
+    });
+
+    expect(exchange.fetchOHLCV).toHaveBeenCalledWith('AAVE/USDT', '1h', undefined, 100);
   });
 
   it('builds CryptoPanic news requests with user token and filters', () => {

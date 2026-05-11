@@ -111,6 +111,15 @@ describe('market data helpers', () => {
           assetClass: 'crypto',
           symbolFormat: 'BASE/QUOTE or compact BASEQUOTE, for example AAVE/USDT or AAVEUSDT',
         },
+        calculate_indicators: {
+          provider: 'binance',
+          source: 'local_calculation',
+          assetClass: 'crypto',
+          indicators: expect.arrayContaining([
+            expect.objectContaining({ id: 'rsi' }),
+            expect.objectContaining({ id: 'macd' }),
+          ]),
+        },
         get_taapi_bulk_indicators: {
           provider: 'taapi',
           indicators: expect.arrayContaining([
@@ -120,7 +129,7 @@ describe('market data helpers', () => {
         },
       },
       routing: expect.arrayContaining([
-        expect.stringContaining('get_taapi_indicator'),
+        expect.stringContaining('calculate_indicators'),
       ]),
     });
   });

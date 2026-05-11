@@ -210,6 +210,10 @@ describe('observability normalization', () => {
     expect(resolveToolCallProvider('get_taapi_indicator')).toBe('taapi');
     expect(resolveToolCallProvider('get_taapi_bulk_indicators')).toBe('taapi');
   });
+
+  it('attributes locally calculated indicator tools to Binance', () => {
+    expect(resolveToolCallProvider('calculate_indicators')).toBe('binance');
+  });
 });
 
 describe('TradeMCP research guide', () => {
@@ -231,6 +235,17 @@ describe('TradeMCP research guide', () => {
       rules: expect.arrayContaining([
         expect.stringContaining('Do not hallucinate unavailable metrics'),
         expect.stringContaining('Never analyze a cryptoasset in isolation'),
+      ]),
+    });
+  });
+
+  it('routes crypto technical analysis to local indicator calculation first', () => {
+    expect(getTradeMcpResearchGuide('technical_crypto')).toMatchObject({
+      workflow: expect.arrayContaining([
+        expect.stringContaining('calculate_indicators'),
+      ]),
+      recommendedToolsInOrder: expect.arrayContaining([
+        'calculate_indicators',
       ]),
     });
   });
