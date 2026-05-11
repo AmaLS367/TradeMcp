@@ -312,7 +312,7 @@ function AuthGuard() {
               {activeTab === 'mcp-market' && <McpMarket user={user} />}
               {activeTab === 'observability' && <Observability user={user} />}
               {activeTab === 'ai-clients' && <AIClientConnections />}
-              {activeTab === 'settings' && <MCPSettings />}
+              {activeTab === 'settings' && <MCPSettings user={user} />}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -393,14 +393,61 @@ function OAuthAuthorize() {
   );
 }
 
-function MCPSettings() {
+function MCPSettings({ user }: { user: User }) {
    const [copied, setCopied] = useState(false);
+   const [apiKeys, setApiKeys] = useState<any[]>([]);
+   const [generating, setGenerating] = useState(false);
    const baseUrl = import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin + '/api/mcp/';
+
+   useEffect(() => {
+     if (!user) return;
+     const q = query(collection(db, `users/${user.uid}/api_keys`));
+     const unsub = onSnapshot(q, (snap) => {
+       setApiKeys(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+     });
+     return unsub;
+   }, [user]);
 
    const handleCopy = () => {
        navigator.clipboard.writeText(baseUrl);
        setCopied(true);
        setTimeout(() => setCopied(false), 2000);
+   };
+
+   const generateKey = async () => {
+     setGenerating(true);
+     try {
+       const token = await user.getIdToken();
+       const res = await fetch('/api/mcp/keys', {
+         method: 'POST',
+         headers: {
+           'Content-Type': 'application/json',
+           Authorization: `Bearer ${token}`
+         },
+         body: JSON.stringify({ label: 'Generated Key' })
+       });
+       if (!res.ok) throw new Error('Failed to generate key');
+       const data = await res.json();
+       navigator.clipboard.writeText(data.key);
+       toast.success('Key generated and copied to clipboard!');
+     } catch (err: any) {
+       toast.error(err.message);
+     } finally {
+       setGenerating(false);
+     }
+   };
+
+   const revokeKey = async (id: string) => {
+     try {
+       const token = await user.getIdToken();
+       await fetch(`/api/mcp/keys/${id}`, {
+         method: 'DELETE',
+         headers: { Authorization: `Bearer ${token}` }
+       });
+       toast.success('Key revoked');
+     } catch (err: any) {
+       toast.error('Failed to revoke key');
+     }
    };
 
    return (
@@ -473,6 +520,46 @@ function MCPSettings() {
                </div>
            </CardContent>
         </Card>
+
+         <Card className="glass-card border-none mt-6">
+            <CardHeader>
+                <div className="flex items-center justify-between">
+                   <div className="flex items-center gap-3">
+                      <div className="p-2 bg-primary/10 rounded-lg">
+                         <KeyRound className="text-primary w-5 h-5" />
+                      </div>
+                      <div>
+                        <CardTitle>API Keys</CardTitle>
+                        <CardDescription>Generate keys for direct agent or script access</CardDescription>
+                      </div>
+                   </div>
+                   <Button onClick={generateKey} disabled={generating} className="gap-2 rounded-xl">
+                      <Plus size={16} /> Generate New Key
+                   </Button>
+                </div>
+            </CardHeader>
+            <CardContent>
+                {apiKeys.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground border border-dashed border-border/40 rounded-xl bg-muted/20">
+                     No API keys generated yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                     {apiKeys.map(key => (
+                       <div key={key.id} className="flex items-center justify-between p-4 bg-muted/30 border border-border/40 rounded-2xl">
+                          <div>
+                             <p className="font-semibold text-sm">{key.label}</p>
+                             <p className="text-xs text-muted-foreground font-mono">key_...{key.id.slice(-4)}</p>
+                          </div>
+                          <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => revokeKey(key.id)}>
+                             <Trash2 size={16} />
+                          </Button>
+                       </div>
+                     ))}
+                  </div>
+                )}
+            </CardContent>
+         </Card>
       </div>
    );
 }
