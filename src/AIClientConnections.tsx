@@ -80,14 +80,25 @@ interface ClientCard {
   name: string;
   platform: string;
   accentClass: string;
-  oauthSupport: 'auto' | 'manual' | 'ui-only';
+  oauthSupport: 'auto' | 'manual' | 'ui-only' | 'api-key';
   snippet: (mcpUrl: string) => string;
   snippetLabel: string;
   filePath?: string;
   note?: string;
 }
 
-function buildClients(mcpUrl: string): ClientCard[] {
+export function buildMcpUrl(baseUrl: string, profile: Profile) {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://example.local';
+  const url = new URL(baseUrl, origin);
+  if (profile === 'full_access') {
+    url.searchParams.delete('profile');
+  } else {
+    url.searchParams.set('profile', profile);
+  }
+  return url.href;
+}
+
+export function buildClients(mcpUrl: string): ClientCard[] {
   return [
     {
       id: 'claude-desktop',
@@ -128,10 +139,10 @@ OAuth callbacks must be allowed for: https://claude.ai/api/mcp/auth_callback`,
       name: 'Claude Code (CLI)',
       platform: 'CLI',
       accentClass: 'bg-amber-500/10 text-amber-500',
-      oauthSupport: 'auto',
+      oauthSupport: 'api-key',
       snippetLabel: 'Terminal command',
-      snippet: (url) => `claude mcp add --transport sse trade-mcp "${url}"`,
-      note: 'OAuth flow opens in browser automatically.',
+      snippet: (url) => `claude mcp add trade-mcp --env TRADEMCP_API_KEY=YOUR_DASHBOARD_API_KEY -- npx -y mcp-remote "${url}" --header "Authorization: Bearer \${TRADEMCP_API_KEY}"`,
+      note: 'Generate the API key in Dashboard → Settings → API Keys. The key is used as a Bearer token for CLI access.',
     },
     {
       id: 'chatgpt',
@@ -154,7 +165,7 @@ OAuth callback URL: https://chatgpt.com/connector/oauth/callback`,
       name: 'Gemini CLI',
       platform: 'CLI',
       accentClass: 'bg-blue-500/10 text-blue-500',
-      oauthSupport: 'manual',
+      oauthSupport: 'api-key',
       snippetLabel: '~/.gemini/settings.json',
       filePath: '~/.gemini/settings.json',
       snippet: (url) =>
@@ -162,13 +173,56 @@ OAuth callback URL: https://chatgpt.com/connector/oauth/callback`,
           {
             mcpServers: {
               'trade-mcp': {
-                httpUrl: url,
+                command: 'npx',
+                args: [
+                  '-y',
+                  'mcp-remote',
+                  url,
+                  '--header',
+                  'Authorization: Bearer ${TRADEMCP_API_KEY}',
+                ],
+                env: {
+                  TRADEMCP_API_KEY: 'paste-your-dashboard-api-key',
+                },
               },
             },
           },
           null,
           2
         ),
+      note: 'Use API-key Bearer auth for CLI clients that cannot complete browser OAuth reliably.',
+    },
+    {
+      id: 'gemini-antigravity',
+      name: 'Gemini Antigravity',
+      platform: 'CLI',
+      accentClass: 'bg-indigo-500/10 text-indigo-500',
+      oauthSupport: 'api-key',
+      snippetLabel: '~/.gemini/antigravity/mcp_config.json',
+      filePath: '~/.gemini/antigravity/mcp_config.json',
+      snippet: (url) =>
+        JSON.stringify(
+          {
+            mcpServers: {
+              'trade-mcp': {
+                command: 'npx',
+                args: [
+                  '-y',
+                  'mcp-remote',
+                  url,
+                  '--header',
+                  'Authorization: Bearer ${TRADEMCP_API_KEY}',
+                ],
+                env: {
+                  TRADEMCP_API_KEY: 'paste-your-dashboard-api-key',
+                },
+              },
+            },
+          },
+          null,
+          2
+        ),
+      note: 'If your Antigravity build only supports serverURL, use the MCP URL plus ?key=YOUR_DASHBOARD_API_KEY as a fallback.',
     },
     {
       id: 'cursor',
@@ -265,6 +319,7 @@ const oauthBadge: Record<string, { label: string; className: string }> = {
   auto: { label: 'OAuth auto (DCR)', className: 'bg-green-500/10 text-green-500 border-none' },
   manual: { label: 'OAuth manual', className: 'bg-yellow-500/10 text-yellow-600 border-none' },
   'ui-only': { label: 'OAuth via UI', className: 'bg-blue-500/10 text-blue-500 border-none' },
+  'api-key': { label: 'API key OAuth', className: 'bg-emerald-500/10 text-emerald-500 border-none' },
 };
 
 export function AIClientConnections() {
@@ -277,10 +332,7 @@ export function AIClientConnections() {
     (import.meta.env.VITE_PUBLIC_BASE_URL as string | undefined) ||
     `${window.location.origin}/api/mcp/`;
 
-  const mcpUrl =
-    selectedProfile === 'full_access'
-      ? baseUrl
-      : `${baseUrl.replace(/\/$/, '')}/?profile=${selectedProfile}`;
+  const mcpUrl = buildMcpUrl(baseUrl, selectedProfile);
 
   const clients = buildClients(mcpUrl);
 
@@ -433,8 +485,9 @@ export function AIClientConnections() {
             <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Manual checklist</p>
             {[
               'Copied the MCP URL (with profile suffix if applicable)',
+              'For CLI clients, generated an API key in Settings → API Keys and pasted it into the config/env value',
               'Saved the config to the correct file or UI field for your client',
-              'Completed the OAuth sign-in flow inside the client',
+              'Completed OAuth sign-in for web clients, or configured Bearer API-key auth for CLI clients',
               'Tested by asking: "What is the current price of Bitcoin?"',
             ].map((item) => (
               <div key={item} className="flex items-start gap-3 text-sm text-muted-foreground">

@@ -52,6 +52,29 @@ const mcpServerUrl = new URL('/api/mcp/', publicBaseUrl || 'http://localhost:300
 const oauthProvider = new FirebaseOAuthProvider(publicBaseUrl || 'http://localhost:3000', db);
 const resourceMetadataUrl = new URL('/api/mcp/.well-known/oauth-protected-resource', publicBaseUrl || 'http://localhost:3000').href;
 
+type McpProfile = 'safe_research' | 'trading_review' | 'full_access';
+
+const MCP_PROFILE_RANK: Record<McpProfile, number> = {
+    safe_research: 0,
+    trading_review: 1,
+    full_access: 2,
+};
+
+export function normalizeMcpProfile(value: unknown): McpProfile | undefined {
+    if (value === 'safe_research' || value === 'trading_review' || value === 'full_access') {
+        return value;
+    }
+    return undefined;
+}
+
+export function resolveEffectiveMcpProfile(requestedProfile: unknown, apiKeyProfile: unknown) {
+    const requested = normalizeMcpProfile(requestedProfile);
+    const keyProfile = normalizeMcpProfile(apiKeyProfile);
+    if (!keyProfile) return requested;
+    if (!requested) return keyProfile;
+    return MCP_PROFILE_RANK[requested] <= MCP_PROFILE_RANK[keyProfile] ? requested : keyProfile;
+}
+
 function base64UrlSha256(value: string) {
     return crypto
         .createHash('sha256')
@@ -126,16 +149,16 @@ function getApiKey(req: express.Request) {
     return null;
 }
 
-async function userIdFromMcpRequest(req: express.Request) {
+async function authContextFromMcpRequest(req: express.Request) {
     const oauthUserId = req.auth?.extra?.userId;
     if (typeof oauthUserId === 'string' && oauthUserId.trim()) {
-        return oauthUserId.trim();
+        return { userId: oauthUserId.trim() };
     }
 
     const token = req.query.token as string | undefined;
     if (token) {
         const decoded = await admin.auth().verifyIdToken(token);
-        return decoded.uid;
+        return { userId: decoded.uid };
     }
 
     const apiKey = getApiKey(req);
@@ -148,7 +171,11 @@ async function userIdFromMcpRequest(req: express.Request) {
         throw new Error('Invalid API key. Verify the key in the Trade MCP dashboard → Settings → API Keys, or generate a new one if it was revoked.');
     }
 
-    return snap.docs[0].ref.parent.parent!.id;
+    const data = snap.docs[0].data();
+    return {
+        userId: snap.docs[0].ref.parent.parent!.id,
+        apiKeyProfile: data.profile,
+    };
 }
 
 // We keep a map of legacy SSE transports by session ID.
@@ -344,10 +371,23 @@ const oauthMiddleware = requireBearerAuth({
     resourceMetadataUrl,
 });
 
-const maybeOauthMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (getApiKey(req)) {
+const maybeOauthMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.query.key || req.header('x-api-key')) {
         return next();
     }
+
+    const authHeader = req.header('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.slice('Bearer '.length).trim();
+        try {
+            (req as any).auth = await oauthProvider.verifyAccessToken(token);
+        } catch {
+            // CLI clients may use Dashboard API keys as Bearer tokens. Let the MCP
+            // request handler resolve that key against users/{uid}/api_keys.
+        }
+        return next();
+    }
+
     return oauthMiddleware(req, res, next);
 };
 
@@ -623,13 +663,15 @@ mcpRouter.delete('/connections/:id', verifyAuth, async (req, res) => {
 mcpRouter.post('/keys', verifyAuth, async (req, res) => {
     const userId = (req as any).userId;
     const key = crypto.randomBytes(32).toString('hex');
+    const profile = normalizeMcpProfile(req.body.profile) || 'full_access';
     const docRef = db.collection(`users/${userId}/api_keys`).doc();
     await docRef.set({
         key,
         label: req.body.label || 'Default',
+        profile,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    res.json({ success: true, id: docRef.id, key });
+    res.json({ success: true, id: docRef.id, key, profile });
 });
 
 // Revoke API key
@@ -682,10 +724,11 @@ mcpRouter.post('/', maybeOauthMiddleware, async (req, res) => {
     let transport: StreamableHTTPServerTransport | undefined;
 
     try {
-        const userId = await userIdFromMcpRequest(req);
-        const profile = typeof req.query.profile === 'string' ? req.query.profile : undefined;
+        const authContext = await authContextFromMcpRequest(req);
+        const requestedProfile = typeof req.query.profile === 'string' ? req.query.profile : undefined;
+        const profile = resolveEffectiveMcpProfile(requestedProfile, authContext.apiKeyProfile);
         const clientType = detectClientType(req);
-        server = createMcpServer(userId, profile, clientType);
+        server = createMcpServer(authContext.userId, profile, clientType);
         transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: undefined,
         });
@@ -699,11 +742,12 @@ mcpRouter.post('/', maybeOauthMiddleware, async (req, res) => {
         });
     } catch (err: any) {
         logger.error(err, "MCP streamable HTTP error:", err);
+        const isAuthError = err.message?.startsWith('Authentication required') || err.message?.startsWith('Invalid API key');
         if (!res.headersSent) {
-            res.status(err.message === 'Missing auth' || err.message === 'Invalid API key' ? 401 : 500).json({
+            res.status(isAuthError ? 401 : 500).json({
                 jsonrpc: "2.0",
                 error: {
-                    code: err.message === 'Missing auth' || err.message === 'Invalid API key' ? -32001 : -32603,
+                    code: isAuthError ? -32001 : -32603,
                     message: err.message,
                 },
                 id: null,
@@ -725,11 +769,12 @@ mcpRouter.get('/', maybeOauthMiddleware, (_req, res) => {
 
 mcpRouter.get('/sse', maybeOauthMiddleware, async (req, res) => {
     try {
-        const userId = await userIdFromMcpRequest(req);
-        const profile = typeof req.query.profile === 'string' ? req.query.profile : undefined;
+        const authContext = await authContextFromMcpRequest(req);
+        const requestedProfile = typeof req.query.profile === 'string' ? req.query.profile : undefined;
+        const profile = resolveEffectiveMcpProfile(requestedProfile, authContext.apiKeyProfile);
         const clientType = detectClientType(req);
         const transport = new SSEServerTransport("/api/mcp/messages", res);
-        const server = createMcpServer(userId, profile, clientType);
+        const server = createMcpServer(authContext.userId, profile, clientType);
         await server.connect(transport);
         transports.set(transport.sessionId, transport);
         

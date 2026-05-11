@@ -30,9 +30,12 @@
 
 | Method | How |
 |--------|-----|
-| 🔗 **OAuth** | Recommended for ChatGPT, Claude, Cursor |
-| 🔑 **API Key** | Dashboard → **Settings** → **API Keys** → Generate → Pass as `Authorization: Bearer <key>` or `?key=<key>` |
+| 🔗 **OAuth** | Recommended for ChatGPT, Claude web, Cursor, and clients with browser OAuth |
+| 🔑 **API Key Bearer** | Recommended for CLI clients. Dashboard → **Settings** → **API Keys** → Generate → Pass as `Authorization: Bearer <key>` |
+| 🔗 **API Key URL fallback** | Use `?key=<key>` only when the client cannot send headers |
 | 🏷️ **x-api-key header** | Set `x-api-key: <your-key>` on requests |
+
+API keys can be scoped to `safe_research`, `trading_review`, or `full_access`. The server caps tool access to the key profile, so `?profile=full_access` cannot escalate a `safe_research` key.
 
 ---
 

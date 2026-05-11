@@ -10,10 +10,11 @@ All clients use the same MCP endpoint:
 
 ```
 MCP URL: https://vmi3245942.contaboserver.net/api/mcp/
-Authentication: OAuth
+Web authentication: OAuth
+CLI authentication: Dashboard API key as Authorization: Bearer <key>
 ```
 
-During OAuth setup, you will be redirected to the Trade MCP dashboard to sign in with Google. Use the Google account that has your exchange connections and data provider keys configured.
+During OAuth setup, web clients redirect to the Trade MCP dashboard to sign in with Google. CLI clients should generate an API key in **Dashboard → Settings → API Keys** and pass it as a Bearer token. API keys have an access profile; a key cannot access tools above its profile even if the URL requests a higher `?profile=`.
 
 ---
 
@@ -54,27 +55,37 @@ During OAuth setup, you will be redirected to the Trade MCP dashboard to sign in
 ![Status](https://img.shields.io/badge/Status-Supported-brightgreen) ![Transport](https://img.shields.io/badge/Transport-Streamable_HTTP-blue)
 
 1. Install and configure Gemini CLI on your machine
-2. Add the MCP server to your Gemini CLI configuration:
+2. Generate an API key in Trade MCP → **Settings** → **API Keys**
+3. Add the MCP server to your Gemini CLI configuration:
 
 ```json
 {
   "mcpServers": {
-    "trademcp": {
-      "url": "https://vmi3245942.contaboserver.net/api/mcp/",
-      "auth": {
-        "type": "oauth"
+    "trade-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://vmi3245942.contaboserver.net/api/mcp/?profile=trading_review",
+        "--header",
+        "Authorization: Bearer ${TRADEMCP_API_KEY}"
+      ],
+      "env": {
+        "TRADEMCP_API_KEY": "paste-your-dashboard-api-key"
       }
     }
   }
 }
 ```
 
-3. 🔄 Restart Gemini CLI
-4. The first tool call triggers the OAuth flow in your browser
-5. Complete the Google sign-in and authorization
-6. ✅ Ready to go!
+4. 🔄 Restart Gemini CLI
+5. ✅ Ready to go!
 
 > 💡 **Tip:** Detected via User-Agent headers in observability.
+
+### Gemini Antigravity
+
+Use the same API-key Bearer pattern in `~/.gemini/antigravity/mcp_config.json`. If your Antigravity build only supports `serverURL`, use `https://vmi3245942.contaboserver.net/api/mcp/?profile=trading_review&key=YOUR_DASHBOARD_API_KEY` as a fallback.
 
 ---
 

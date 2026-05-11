@@ -397,7 +397,13 @@ function MCPSettings({ user }: { user: User }) {
    const [copied, setCopied] = useState(false);
    const [apiKeys, setApiKeys] = useState<any[]>([]);
    const [generating, setGenerating] = useState(false);
+   const [selectedKeyProfile, setSelectedKeyProfile] = useState<'safe_research' | 'trading_review' | 'full_access'>('full_access');
    const baseUrl = import.meta.env.VITE_PUBLIC_BASE_URL || window.location.origin + '/api/mcp/';
+   const apiKeyProfiles = [
+     { id: 'safe_research', label: 'Safe Research', description: 'Research, market data, public exchange reads' },
+     { id: 'trading_review', label: 'Trading Review', description: 'Adds balances and trade proposals' },
+     { id: 'full_access', label: 'Full Access', description: 'All TradeMCP tools and enabled marketplace tools' },
+   ] as const;
 
    useEffect(() => {
      if (!user) return;
@@ -424,7 +430,7 @@ function MCPSettings({ user }: { user: User }) {
            'Content-Type': 'application/json',
            Authorization: `Bearer ${token}`
          },
-         body: JSON.stringify({ label: 'Generated Key' })
+         body: JSON.stringify({ label: 'Generated Key', profile: selectedKeyProfile })
        });
        if (!res.ok) throw new Error('Failed to generate key');
        const data = await res.json();
@@ -530,7 +536,7 @@ function MCPSettings({ user }: { user: User }) {
                       </div>
                       <div>
                         <CardTitle>API Keys</CardTitle>
-                        <CardDescription>Generate keys for direct agent or script access</CardDescription>
+                        <CardDescription>Generate Bearer keys for CLI clients, agents, and scripts</CardDescription>
                       </div>
                    </div>
                    <Button onClick={generateKey} disabled={generating} className="gap-2 rounded-xl">
@@ -538,7 +544,26 @@ function MCPSettings({ user }: { user: User }) {
                    </Button>
                 </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {apiKeyProfiles.map((profile) => (
+                    <button
+                      key={profile.id}
+                      onClick={() => setSelectedKeyProfile(profile.id)}
+                      className={`text-left p-3 rounded-2xl border transition-all ${
+                        selectedKeyProfile === profile.id
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border/40 hover:bg-muted/30'
+                      }`}
+                    >
+                      <p className="font-semibold text-sm">{profile.label}</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{profile.description}</p>
+                    </button>
+                  ))}
+                </div>
+                <div className="p-3 rounded-xl border border-border/40 bg-muted/30 text-xs text-muted-foreground">
+                  Use the generated value as <code className="font-mono">Authorization: Bearer &lt;key&gt;</code> for CLI MCP clients. A key cannot access tools above its selected profile, even if the URL requests a higher <code className="font-mono">?profile=</code>.
+                </div>
                 {apiKeys.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground border border-dashed border-border/40 rounded-xl bg-muted/20">
                      No API keys generated yet.
@@ -549,7 +574,12 @@ function MCPSettings({ user }: { user: User }) {
                        <div key={key.id} className="flex items-center justify-between p-4 bg-muted/30 border border-border/40 rounded-2xl">
                           <div>
                              <p className="font-semibold text-sm">{key.label}</p>
-                             <p className="text-xs text-muted-foreground font-mono">key_...{key.id.slice(-4)}</p>
+                             <div className="flex items-center gap-2 mt-1">
+                               <p className="text-xs text-muted-foreground font-mono">key_...{key.id.slice(-4)}</p>
+                               <Badge variant="secondary" className="text-[10px] border-none bg-primary/10 text-primary">
+                                 {key.profile || 'full_access'}
+                               </Badge>
+                             </div>
                           </div>
                           <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => revokeKey(key.id)}>
                              <Trash2 size={16} />

@@ -5,6 +5,7 @@ import {
   getTradeMcpResearchGuide,
   OBSERVABILITY_MCP_TOOL_NAMES,
   RAW_EXCHANGE_MCP_TOOL_NAMES,
+  resolveEffectiveMcpProfile,
   sanitizeFirestoreData,
   shouldIncludeTool,
   TRADEMCP_DOCS_TOOL_NAME,
@@ -82,6 +83,14 @@ describe('Firestore sanitization', () => {
 });
 
 describe('MCP profile tool visibility', () => {
+  it('caps requested profiles by the API key access profile', () => {
+    expect(resolveEffectiveMcpProfile(undefined, 'safe_research')).toBe('safe_research');
+    expect(resolveEffectiveMcpProfile('full_access', 'trading_review')).toBe('trading_review');
+    expect(resolveEffectiveMcpProfile('safe_research', 'trading_review')).toBe('safe_research');
+    expect(resolveEffectiveMcpProfile('full_access', undefined)).toBe('full_access');
+    expect(resolveEffectiveMcpProfile('unknown', 'safe_research')).toBe('safe_research');
+  });
+
   it('exposes raw Binance/Bybit exchange methods in every profile', () => {
     for (const toolName of RAW_EXCHANGE_MCP_TOOL_NAMES) {
       expect(shouldIncludeTool(toolName, 'safe_research')).toBe(true);
