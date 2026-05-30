@@ -24,6 +24,10 @@ async function checkFirebaseConnection() {
 
 async function startServer() {
   const app = express();
+  
+  // Trust proxy so that express-rate-limit correctly retrieves client IP when behind reverse proxies
+  app.set('trust proxy', 1);
+
   const PORT = env.PORT;
 
   // Logging middleware

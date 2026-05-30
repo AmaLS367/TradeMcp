@@ -118,11 +118,42 @@ export async function getBybitEarnProducts(args: any) {
 }
 
 export async function getBybitEarnPosition(userId: string | null, args: any) {
-  const params: Record<string, any> = {};
-  if (args.coin) params.coin = args.coin.toUpperCase();
+  const coin = args.coin ? args.coin.toUpperCase() : undefined;
+  const requestedCategory = args.category;
 
-  const data = await callBybitV5Earn('/v5/earn/position', true, params, userId);
-  return { provider: 'bybit', data };
+  // Bybit V5 /v5/earn/position requires a 'category' parameter.
+  // If the user did not specify one or requested 'ALL', we query all supported categories.
+  const categories = requestedCategory && requestedCategory !== 'ALL'
+    ? [requestedCategory]
+    : ['FlexibleSaving', 'FixedSaving', 'OnChain'];
+
+  const results: Record<string, any> = {};
+
+  await Promise.all(
+    categories.map(async (cat) => {
+      try {
+        const params: Record<string, any> = { category: cat };
+        if (coin) params.coin = coin;
+
+        const res = await callBybitV5Earn('/v5/earn/position', true, params, userId);
+        results[cat] = res?.list || [];
+      } catch (err: any) {
+        // If it's a 180001 Invalid Parameter error (e.g., FixedSaving not supported or empty),
+        // we swallow it and return an empty list for that category to ensure smooth UX.
+        if (err.message.includes('180001') || err.message.includes('Invalid parameter')) {
+          results[cat] = [];
+        } else {
+          throw err;
+        }
+      }
+    })
+  );
+
+  return {
+    provider: 'bybit',
+    category: requestedCategory || 'ALL',
+    positions: results,
+  };
 }
 
 export async function getBinanceLockedEarnProducts(userId: string | null, args: any) {
