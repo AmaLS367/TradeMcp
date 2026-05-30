@@ -48,6 +48,12 @@ import {
     trimToolText,
 } from './mcpExchange.js';
 import {
+    getBybitEarnProducts,
+    getBybitEarnPosition,
+    getBinanceLockedEarnProducts,
+    getBinanceEarnPositions
+} from './mcpEarn.js';
+import {
     getCoinGeckoCredentials,
     getCryptoPanicCredentials,
     getMarketDataCredentials,
@@ -756,6 +762,75 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                     },
                     annotations: { readOnlyHint: true },
                 },
+                {
+                    name: "get_bybit_earn_products",
+                    description: "Use this when the user asks for available Bybit Earn products, APR rates, or wants to compare Flexible vs Fixed Savings options. Returns product list with estimated APR, min/max amounts, and availability. Do not use for user positions or trading signals.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            category: {
+                                type: "string",
+                                enum: ["FlexibleSaving", "FixedSaving", "OnChain"],
+                                description: "Product category filter."
+                            },
+                            coin: {
+                                type: "string",
+                                description: "Filter by coin ticker, e.g. USDT, BTC (case-insensitive)."
+                            }
+                        }
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: "get_bybit_earn_position",
+                    description: "Use this when the user asks about their active Bybit Earn positions, current yield, or total staked amounts. Requires Bybit API connection.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            category: {
+                                type: "string",
+                                enum: ["FlexibleSaving", "FixedSaving", "OnChain"],
+                                description: "Product category filter."
+                            },
+                            coin: {
+                                type: "string",
+                                description: "Filter by coin ticker, e.g. USDT, BTC (case-insensitive)."
+                            }
+                        }
+                    },
+                },
+                {
+                    name: "get_binance_locked_earn_products",
+                    description: "Use this when the user asks for Binance Simple Earn Locked products, locked interest rates, or wants to compare locked yield terms for a coin. Returns products list with APY and duration options.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            asset: {
+                                type: "string",
+                                description: "Filter by asset ticker, e.g. USDT, BNB, SOL."
+                            },
+                            size: {
+                                type: "number",
+                                description: "Limit number of products returned per page (default is 10)."
+                            }
+                        }
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: "get_binance_earn_positions",
+                    description: "Use this to get a complete overview of the user's active Binance Simple Earn positions (both Flexible and Locked), including current accruals and lockup dates. Requires Binance API connection.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            type: {
+                                type: "string",
+                                enum: ["FLEXIBLE", "LOCKED", "ALL"],
+                                description: "Staking position type to fetch. Defaults to ALL."
+                            }
+                        }
+                    },
+                },
             ];
 
         const tools = allTools
@@ -899,6 +974,62 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
             return {
                 content: [{ type: "text", text: JSON.stringify(balances, null, 2) }],
                 structuredContent: { data: balances },
+            };
+        }
+
+        if (name === "get_bybit_earn_products") {
+            const result = await getBybitEarnProducts(args);
+            return {
+                content: [{ type: "text", text: trimToolText(JSON.stringify(result, null, 2), MAX_TOOL_RESPONSE_CHARS) }],
+                structuredContent: result,
+            };
+        }
+
+        if (name === "get_bybit_earn_position") {
+            if (!userId) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: "Bybit Earn positions require authentication. Connect via the dashboard exchanges panel."
+                    }]
+                };
+            }
+            const result = await getBybitEarnPosition(userId, args);
+            return {
+                content: [{ type: "text", text: trimToolText(JSON.stringify(result, null, 2), MAX_TOOL_RESPONSE_CHARS) }],
+                structuredContent: result,
+            };
+        }
+
+        if (name === "get_binance_locked_earn_products") {
+            if (!userId) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: "Binance Simple Earn products require authentication. Connect via the dashboard exchanges panel."
+                    }]
+                };
+            }
+            const result = await getBinanceLockedEarnProducts(userId, args);
+            return {
+                content: [{ type: "text", text: trimToolText(JSON.stringify(result, null, 2), MAX_TOOL_RESPONSE_CHARS) }],
+                structuredContent: result,
+            };
+        }
+
+        if (name === "get_binance_earn_positions") {
+            if (!userId) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: "Binance Simple Earn positions require authentication. Connect via the dashboard exchanges panel."
+                    }]
+                };
+            }
+            const result = await getBinanceEarnPositions(userId, args);
+            return {
+                content: [{ type: "text", text: trimToolText(JSON.stringify(result, null, 2), MAX_TOOL_RESPONSE_CHARS) }],
+                structuredContent: result,
             };
         }
 
