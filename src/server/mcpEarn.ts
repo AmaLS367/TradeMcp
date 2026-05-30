@@ -18,6 +18,14 @@ export async function callBybitV5Earn(
     'Content-Type': 'application/json',
   };
 
+  // Filter out undefined, null, and empty string values from params
+  const cleanParams: Record<string, any> = {};
+  for (const [key, val] of Object.entries(params)) {
+    if (val !== undefined && val !== null && val !== '') {
+      cleanParams[key] = val;
+    }
+  }
+
   if (isPrivate) {
     if (!userId) {
       throw new Error('Authentication required for private Bybit Earn positions. Please log in or provide an API key.');
@@ -33,10 +41,10 @@ export async function callBybitV5Earn(
 
     const timestamp = Date.now().toString();
     const recvWindow = '5000';
-    
+
     // Prepare parameters for GET request (sorting by keys)
-    const sortedKeys = Object.keys(params).sort();
-    const queryParts = sortedKeys.map(key => `${key}=${params[key]}`);
+    const sortedKeys = Object.keys(cleanParams).sort();
+    const queryParts = sortedKeys.map(key => `${key}=${cleanParams[key]}`);
     const queryString = queryParts.join('&');
     if (queryString) {
       url.search = queryString;
@@ -54,11 +62,9 @@ export async function callBybitV5Earn(
     headers['X-BAPI-SIGN'] = signature;
     headers['X-BAPI-RECV-WINDOW'] = recvWindow;
   } else {
-    // For public requests, just append parameters to URL
-    for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined && value !== null && value !== '') {
-        url.searchParams.set(key, String(value));
-      }
+    // For public requests, just append clean parameters to URL
+    for (const [key, value] of Object.entries(cleanParams)) {
+      url.searchParams.set(key, String(value));
     }
   }
 
@@ -69,6 +75,11 @@ export async function callBybitV5Earn(
 
   while (attempts < maxAttempts) {
     try {
+      console.log('[Bybit Earn DEBUG]', {
+        url: url.toString(),
+        headers,
+        params: cleanParams
+      });
       const response = await fetch(url.toString(), { method: 'GET', headers });
       
       if (response.status === 429) {
