@@ -108,7 +108,6 @@ export async function getBybitEarnProducts(args: any) {
 
 export async function getBybitEarnPosition(userId: string | null, args: any) {
   const params: Record<string, any> = {};
-  if (args.category) params.category = args.category;
   if (args.coin) params.coin = args.coin.toUpperCase();
 
   const data = await callBybitV5Earn('/v5/earn/position', true, params, userId);

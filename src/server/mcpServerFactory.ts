@@ -787,11 +787,6 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                     inputSchema: {
                         type: "object",
                         properties: {
-                            category: {
-                                type: "string",
-                                enum: ["FlexibleSaving", "FixedSaving", "OnChain"],
-                                description: "Product category filter."
-                            },
                             coin: {
                                 type: "string",
                                 description: "Filter by coin ticker, e.g. USDT, BTC (case-insensitive)."
