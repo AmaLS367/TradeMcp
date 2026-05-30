@@ -102,7 +102,7 @@ export async function getBybitEarnProducts(args: any) {
   if (args.category) params.category = args.category;
   if (args.coin) params.coin = args.coin.toUpperCase();
 
-  const data = await callBybitV5Earn('/v5/earn/product/info', false, params, null);
+  const data = await callBybitV5Earn('/v5/earn/product', false, params, null);
   return { provider: 'bybit', data };
 }
 
