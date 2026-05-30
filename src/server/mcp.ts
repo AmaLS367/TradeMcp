@@ -131,11 +131,6 @@ function isAllowedOAuthRedirectUri(redirectUri: string) {
 }
 
 function getApiKey(req: express.Request) {
-    const queryKey = req.query.key;
-    if (typeof queryKey === 'string' && queryKey.trim()) {
-        return queryKey.trim();
-    }
-
     const headerKey = req.header('x-api-key');
     if (headerKey?.trim()) {
         return headerKey.trim();
@@ -163,7 +158,7 @@ async function authContextFromMcpRequest(req: express.Request) {
 
     const apiKey = getApiKey(req);
     if (!apiKey) {
-        throw new Error('Authentication required. Provide an API key via the x-api-key header, a Bearer token in the Authorization header, or a ?key= query parameter. Generate an API key in the Trade MCP dashboard → Settings → API Keys.');
+        throw new Error('Authentication required. Provide an API key via the x-api-key header or a Bearer token in the Authorization header. Generate an API key in the Trade MCP dashboard → Settings → API Keys.');
     }
 
     const snap = await db.collectionGroup('api_keys').where('key', '==', apiKey).limit(1).get();
@@ -372,7 +367,7 @@ const oauthMiddleware = requireBearerAuth({
 });
 
 const maybeOauthMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (req.query.key || req.header('x-api-key')) {
+    if (req.header('x-api-key')) {
         return next();
     }
 

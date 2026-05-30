@@ -222,7 +222,7 @@ OAuth callback URL: https://chatgpt.com/connector/oauth/callback`,
           null,
           2
         ),
-      note: 'If your Antigravity build only supports serverURL, use the MCP URL plus ?key=YOUR_DASHBOARD_API_KEY as a fallback.',
+      note: 'If your Antigravity build only supports serverURL, pass the API key via the x-api-key header using mcp-remote with --header.',
     },
     {
       id: 'cursor',
