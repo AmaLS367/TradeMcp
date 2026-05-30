@@ -121,25 +121,33 @@ export async function getBybitEarnPosition(userId: string | null, args: any) {
   const coin = args.coin ? args.coin.toUpperCase() : undefined;
   const requestedCategory = args.category;
 
-  // Bybit V5 /v5/earn/position requires a 'category' parameter.
-  // If the user did not specify one or requested 'ALL', we query all supported categories.
-  const categories = requestedCategory && requestedCategory !== 'ALL'
+  // Bybit V5 splits Earn positions across two distinct endpoints:
+  // 1. /v5/earn/fixed-term/position for Fixed Term (FixedSaving) positions.
+  // 2. /v5/earn/position for FlexibleSaving and OnChain positions.
+  const categoriesToFetch = requestedCategory && requestedCategory !== 'ALL'
     ? [requestedCategory]
     : ['FlexibleSaving', 'FixedSaving', 'OnChain'];
 
   const results: Record<string, any> = {};
 
   await Promise.all(
-    categories.map(async (cat) => {
+    categoriesToFetch.map(async (cat) => {
       try {
-        const params: Record<string, any> = { category: cat };
+        const params: Record<string, any> = {};
         if (coin) params.coin = coin;
 
-        const res = await callBybitV5Earn('/v5/earn/position', true, params, userId);
-        results[cat] = res?.list || [];
+        if (cat === 'FixedSaving') {
+          // FixedSaving products are stored in the dedicated fixed-term endpoint
+          const res = await callBybitV5Earn('/v5/earn/fixed-term/position', true, params, userId);
+          results[cat] = res?.list || [];
+        } else {
+          // FlexibleSaving and OnChain products are stored in the regular position endpoint
+          params.category = cat;
+          const res = await callBybitV5Earn('/v5/earn/position', true, params, userId);
+          results[cat] = res?.list || [];
+        }
       } catch (err: any) {
-        // If it's a 180001 Invalid Parameter error (e.g., FixedSaving not supported or empty),
-        // we swallow it and return an empty list for that category to ensure smooth UX.
+        // Swallow 180001 (Invalid Parameter) errors to provide a smooth, error-free unified experience
         if (err.message.includes('180001') || err.message.includes('Invalid parameter')) {
           results[cat] = [];
         } else {
