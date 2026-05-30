@@ -51,7 +51,9 @@ import {
     getBybitEarnProducts,
     getBybitEarnPosition,
     getBinanceLockedEarnProducts,
-    getBinanceEarnPositions
+    getBinanceEarnPositions,
+    getBinanceFlexibleEarnProducts,
+    compareEarnOpportunities
 } from './mcpEarn.js';
 import {
     getCoinGeckoCredentials,
@@ -831,6 +833,42 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                         }
                     },
                 },
+                {
+                    name: "get_binance_flexible_earn_products",
+                    description: "Use this to get the list of available Binance Simple Earn Flexible products and interest rates (APR). Requires Binance API connection.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            asset: {
+                                type: "string",
+                                description: "Filter by asset ticker, e.g. USDT, BTC, BNB."
+                            },
+                            size: {
+                                type: "number",
+                                description: "Limit number of products returned per page (default is 10)."
+                            }
+                        }
+                    },
+                    annotations: { readOnlyHint: true },
+                },
+                {
+                    name: "compare_earn_opportunities",
+                    description: "Compare yield-generating (Earn) opportunities across Binance and Bybit, including Flexible and Fixed term savings, sorted by APR descending.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            coin: {
+                                type: "string",
+                                description: "Filter by coin ticker, e.g. USDT, BTC (case-insensitive, evaluated locally to prevent provider API failures)."
+                            },
+                            limit: {
+                                type: "number",
+                                description: "Limit top N opportunities returned (default is 5)."
+                            }
+                        }
+                    },
+                    annotations: { readOnlyHint: true },
+                },
             ];
 
         const tools = allTools
@@ -1027,6 +1065,30 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 };
             }
             const result = await getBinanceEarnPositions(userId, args);
+            return {
+                content: [{ type: "text", text: trimToolText(JSON.stringify(result, null, 2), MAX_TOOL_RESPONSE_CHARS) }],
+                structuredContent: result,
+            };
+        }
+
+        if (name === "get_binance_flexible_earn_products") {
+            if (!userId) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: "Binance Simple Earn products require authentication. Connect via the dashboard exchanges panel."
+                    }]
+                };
+            }
+            const result = await getBinanceFlexibleEarnProducts(userId, args);
+            return {
+                content: [{ type: "text", text: trimToolText(JSON.stringify(result, null, 2), MAX_TOOL_RESPONSE_CHARS) }],
+                structuredContent: result,
+            };
+        }
+
+        if (name === "compare_earn_opportunities") {
+            const result = await compareEarnOpportunities(userId, args);
             return {
                 content: [{ type: "text", text: trimToolText(JSON.stringify(result, null, 2), MAX_TOOL_RESPONSE_CHARS) }],
                 structuredContent: result,

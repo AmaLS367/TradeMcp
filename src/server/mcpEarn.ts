@@ -113,7 +113,16 @@ export async function getBybitEarnProducts(args: any) {
   if (args.category) params.category = args.category;
   if (args.coin) params.coin = args.coin.toUpperCase();
 
-  const data = await callBybitV5Earn('/v5/earn/product', false, params, null);
+  // Route FixedSaving queries to the dedicated fixed-term endpoint, and others to standard /v5/earn/product
+  const path = args.category === 'FixedSaving'
+    ? '/v5/earn/fixed-term/product'
+    : '/v5/earn/product';
+
+  if (args.category === 'FixedSaving') {
+    delete params.category;
+  }
+
+  const data = await callBybitV5Earn(path, false, params, null);
   return { provider: 'bybit', data };
 }
 
@@ -208,5 +217,151 @@ export async function getBinanceEarnPositions(userId: string | null, args: any) 
     type,
     flexiblePositions: type === 'ALL' || type === 'FLEXIBLE' ? results[0]?.rows || [] : [],
     lockedPositions: type === 'ALL' ? results[1]?.rows || [] : type === 'LOCKED' ? results[0]?.rows || [] : [],
+  };
+}
+
+export async function getBinanceFlexibleEarnProducts(userId: string | null, args: any) {
+  const exchange = await createExchange('binance', userId);
+  if (typeof exchange.sapiGetSimpleEarnFlexibleList !== 'function') {
+    throw new Error('CCXT Binance Simple Earn Flexible List method not available on this instance.');
+  }
+
+  const params: Record<string, any> = {
+    size: args.size || 10,
+  };
+  if (args.asset) params.asset = args.asset.toUpperCase();
+
+  const data = await exchange.sapiGetSimpleEarnFlexibleList(params);
+  return { provider: 'binance', data };
+}
+
+export async function compareEarnOpportunities(userId: string | null, args: any) {
+  const coin = args.coin ? args.coin.toUpperCase() : undefined;
+  const limit = args.limit !== undefined ? Number(args.limit) : 5;
+
+  let bybitFlexible: any[] = [];
+  let bybitFixed: any[] = [];
+  let binanceFlexible: any[] = [];
+  let binanceLocked: any[] = [];
+
+  // Concurrently fetch earn opportunities across both exchanges and swallow errors individually
+  // to avoid breaking the tool if one of the providers is unauthenticated or temporarily fails
+  await Promise.all([
+    // 1. Bybit Flexible Products (Public endpoint, no auth required)
+    (async () => {
+      try {
+        const res = await getBybitEarnProducts({ category: 'FlexibleSaving' });
+        bybitFlexible = res?.data?.list || [];
+      } catch (err) {
+        console.error('Failed to fetch Bybit Flexible products:', err);
+      }
+    })(),
+
+    // 2. Bybit Fixed Products (Public endpoint, no auth required)
+    (async () => {
+      try {
+        const res = await getBybitEarnProducts({ category: 'FixedSaving' });
+        bybitFixed = res?.data?.list || [];
+      } catch (err) {
+        console.error('Failed to fetch Bybit Fixed products:', err);
+      }
+    })(),
+
+    // 3. Binance Flexible Products (Requires active connection)
+    (async () => {
+      try {
+        const res = await getBinanceFlexibleEarnProducts(userId, { size: 100 });
+        binanceFlexible = res?.data?.rows || [];
+      } catch (err) {
+        console.error('Failed to fetch Binance Flexible products:', err);
+      }
+    })(),
+
+    // 4. Binance Locked Products (Requires active connection)
+    (async () => {
+      try {
+        const res = await getBinanceLockedEarnProducts(userId, { size: 100 });
+        binanceLocked = res?.data?.rows || [];
+      } catch (err) {
+        console.error('Failed to fetch Binance Locked products:', err);
+      }
+    })()
+  ]);
+
+  const normalized: any[] = [];
+
+  // Normalize Bybit Flexible Savings
+  for (const item of bybitFlexible) {
+    if (!item.coin) continue;
+    const apyStr = item.interestCoinApyList?.[0]?.apy || '0';
+    normalized.push({
+      exchange: 'bybit',
+      coin: item.coin.toUpperCase(),
+      apr: parseFloat(apyStr.replace('%', '')),
+      category: 'FlexibleSaving',
+      lockDays: 0,
+      minAmount: parseFloat(item.minStakeAmount || '0'),
+    });
+  }
+
+  // Normalize Bybit Fixed Term Savings (FixedSaving)
+  for (const item of bybitFixed) {
+    if (!item.coin) continue;
+    const apyStr = item.interestCoinApyList?.[0]?.apy || '0';
+    normalized.push({
+      exchange: 'bybit',
+      coin: item.coin.toUpperCase(),
+      apr: parseFloat(apyStr.replace('%', '')),
+      category: 'FixedSaving',
+      lockDays: parseInt(item.duration) || 0,
+      minAmount: parseFloat(item.minStakeAmount || '0'),
+    });
+  }
+
+  // Normalize Binance Flexible Simple Earn products (latestAnnualPercentageRate is in decimal, e.g. 0.05 for 5%)
+  for (const item of binanceFlexible) {
+    const coinSymbol = item.asset;
+    if (!coinSymbol) continue;
+    normalized.push({
+      exchange: 'binance',
+      coin: coinSymbol.toUpperCase(),
+      apr: parseFloat(item.latestAnnualPercentageRate || '0') * 100,
+      category: 'FlexibleSaving',
+      lockDays: 0,
+      minAmount: parseFloat(item.minPurchaseAmount || '0'),
+    });
+  }
+
+  // Normalize Binance Locked Simple Earn products (apr is in decimal, e.g. 1.2069 for 120.69%)
+  for (const item of binanceLocked) {
+    const coinSymbol = item.detail?.asset || item.asset;
+    if (!coinSymbol) continue;
+    normalized.push({
+      exchange: 'binance',
+      coin: coinSymbol.toUpperCase(),
+      apr: parseFloat(item.detail?.apr || '0') * 100,
+      category: 'FixedSaving',
+      lockDays: parseInt(item.detail?.duration) || 0,
+      minAmount: parseFloat(item.quota?.minimum || '0'),
+    });
+  }
+
+  // Perform case-insensitive coin filtering locally to prevent Bybit V5 API 180001 validation failures
+  let filtered = normalized;
+  if (coin) {
+    filtered = normalized.filter(item => item.coin === coin);
+  }
+
+  // Sort by APR descending
+  filtered.sort((a, b) => b.apr - a.apr);
+
+  // Take top limit results
+  const result = filtered.slice(0, limit);
+
+  return {
+    coin: coin || 'ALL',
+    limit,
+    totalCount: filtered.length,
+    opportunities: result,
   };
 }
