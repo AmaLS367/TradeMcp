@@ -114,3 +114,50 @@ export async function getBybitEarnPosition(userId: string | null, args: any) {
   const data = await callBybitV5Earn('/v5/earn/position', true, params, userId);
   return { provider: 'bybit', data };
 }
+
+export async function getBinanceLockedEarnProducts(userId: string | null, args: any) {
+  const exchange = await createExchange('binance', userId);
+  if (typeof exchange.sapiGetSimpleEarnLockedList !== 'function') {
+    throw new Error('CCXT Binance Simple Earn Locked List method not available on this instance.');
+  }
+
+  const params: Record<string, any> = {
+    size: args.size || 10,
+  };
+  if (args.asset) params.asset = args.asset.toUpperCase();
+
+  const data = await exchange.sapiGetSimpleEarnLockedList(params);
+  return { provider: 'binance', data };
+}
+
+export async function getBinanceEarnPositions(userId: string | null, args: any) {
+  const exchange = await createExchange('binance', userId);
+  const type = args.type || 'ALL';
+  
+  const promises: Promise<any>[] = [];
+  
+  if (type === 'ALL' || type === 'FLEXIBLE') {
+    if (typeof exchange.sapiGetSimpleEarnFlexiblePosition === 'function') {
+      promises.push(exchange.sapiGetSimpleEarnFlexiblePosition());
+    } else {
+      promises.push(Promise.resolve({ rows: [] }));
+    }
+  }
+  if (type === 'ALL' || type === 'LOCKED') {
+    if (typeof exchange.sapiGetSimpleEarnLockedPosition === 'function') {
+      promises.push(exchange.sapiGetSimpleEarnLockedPosition());
+    } else {
+      promises.push(Promise.resolve({ rows: [] }));
+    }
+  }
+
+  const results = await Promise.all(promises);
+  
+  // Merge Flexible and Locked positions into a unified response
+  return {
+    provider: 'binance',
+    type,
+    flexiblePositions: type === 'ALL' || type === 'FLEXIBLE' ? results[0]?.rows || [] : [],
+    lockedPositions: type === 'ALL' ? results[1]?.rows || [] : type === 'LOCKED' ? results[0]?.rows || [] : [],
+  };
+}
