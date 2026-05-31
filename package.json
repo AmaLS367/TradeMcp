@@ -43,7 +43,7 @@
     "@google/genai": "^1.29.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@tailwindcss/vite": "^4.3.0",
-    "@vitejs/plugin-react": "^5.0.4",
+    "@vitejs/plugin-react": "^6.0.2",
     "axios": "^1.16.1",
     "ccxt": "^4.5.56",
     "class-variance-authority": "^0.7.1",
