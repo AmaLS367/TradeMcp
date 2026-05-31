@@ -28,7 +28,24 @@
 
 ---
 
-## 4. 🔌 Exchange Methods (Raw CCXT)
+## 4. 💸 Earn & Yield
+
+![Auth](https://img.shields.io/badge/Auth-Public_|_OAuth_|_API_Key-orange) ![Read-only](https://img.shields.io/badge/Read--Only-blue)
+
+| Tool | Use for |
+|------|---------|
+| **`get_bybit_earn_products`** | Public Bybit Earn products, categories, APR, min/max amounts |
+| **`get_bybit_earn_position`** | Authenticated Bybit Earn positions by category or coin |
+| **`get_binance_locked_earn_products`** | Binance Simple Earn locked products and terms |
+| **`get_binance_flexible_earn_products`** | Binance Simple Earn flexible products and APR |
+| **`get_binance_earn_positions`** | Authenticated Binance Simple Earn flexible and locked positions |
+| **`compare_earn_opportunities`** | Cross-exchange Earn comparison sorted by APR |
+
+> 🔑 Bybit public product discovery can work without user exchange credentials. Binance product/position tools and all private position tools require the relevant exchange connection.
+
+---
+
+## 5. 🔌 Exchange Methods (Raw CCXT)
 
 ![Auth](https://img.shields.io/badge/Auth-OAuth_|_API_Key-orange) ![Danger](https://img.shields.io/badge/Danger-Raw_Exchange_Access-red)
 
@@ -40,7 +57,7 @@
 
 ---
 
-## 5. 📊 Observability
+## 6. 📊 Observability
 
 ![Auth](https://img.shields.io/badge/Auth-OAuth_|_API_Key-orange) ![Read-only](https://img.shields.io/badge/Read--Only-blue)
 
@@ -50,7 +67,7 @@
 
 ---
 
-## 6. 💱 Forex Market Data
+## 7. 💱 Forex Market Data
 
 ![Auth](https://img.shields.io/badge/Auth-OANDA_|_Twelve_Data_Key-yellow) ![Read-only](https://img.shields.io/badge/Read--Only-blue)
 
@@ -65,7 +82,7 @@
 
 ---
 
-## 7. 📈 Crypto Analysis
+## 8. 📈 Crypto Analysis
 
 ### 🟢 CoinGecko
 
@@ -126,7 +143,7 @@
 
 ---
 
-## 8. 🔍 Multi-Provider Search & Utility
+## 9. 🔍 Multi-Provider Search & Utility
 
 ![Auth](https://img.shields.io/badge/Auth-None_(Public)-brightgreen) ![Read-only](https://img.shields.io/badge/Read--Only-blue)
 
@@ -136,7 +153,7 @@
 
 ---
 
-## 9. 🌐 MCP Marketplace Tools
+## 10. 🌐 MCP Marketplace Tools
 
 Tools proxied from upstream public MCP servers. Names are prefixed to avoid collisions:
 
@@ -156,8 +173,8 @@ Three profiles control which tools are available:
 
 | Profile | 🎯 Includes |
 |---------|-------------|
-| `safe_research` | 📖 Research guide + 💱 Forex + 📈 Crypto + 🔌 Raw exchange + 🔍 Search |
-| `trading_review` | Everything above + 📊 Observability + 💰 Account + 📝 Proposals |
+| `safe_research` | 📖 Research guide + 💱 Forex + 📈 Crypto + 💸 public Earn + 🔌 Raw exchange + 🔍 Search |
+| `trading_review` | Everything above + 📊 Observability + 💰 Account + 💸 private Earn + 📝 Proposals |
 | `full_access` | 🌟 Everything (default) |
 
 > 📌 Set profile via `?profile=safe_research` query parameter when connecting.

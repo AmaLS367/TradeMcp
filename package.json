@@ -1,8 +1,31 @@
 {
-  "name": "react-example",
-  "private": true,
-  "version": "0.0.0",
+  "name": "trade-mcp",
+  "version": "0.1.0",
+  "description": "Remote MCP server and dashboard for crypto research, market data, exchange balances, and human-approved trade proposals.",
+  "license": "GPL-3.0-or-later",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AmaLS367/TradeMcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AmaLS367/TradeMcp/issues"
+  },
+  "homepage": "https://github.com/AmaLS367/TradeMcp#readme",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "typescript",
+    "react",
+    "crypto",
+    "trading",
+    "ccxt",
+    "binance",
+    "bybit",
+    "firebase",
+    "oauth",
+    "market-data"
+  ],
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --platform=node --target=esnext --format=esm --bundle --packages=external --outfile=dist/server.js",
