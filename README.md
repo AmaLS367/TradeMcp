@@ -33,6 +33,7 @@
   <a href="#-how-it-works">How it works</a> ·
   <a href="#-configuration">Configuration</a> ·
   <a href="#-quality-checks">Quality checks</a> ·
+  <a href="#-support">Support</a> ·
   <a href="SECURITY.md">Security</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
   <a href="CODE_OF_CONDUCT.md">Code of Conduct</a>
@@ -184,6 +185,27 @@ npm run lint
 # Run all unit and integration tests using Vitest
 npm test
 ```
+
+---
+
+## 💖 Support
+
+If Trade MCP helps you, you can support development through GitHub Sponsors, referral links, or crypto donations.
+
+| Method | Link |
+|---|---|
+| GitHub Sponsors | [Sponsor AmaLS367](https://github.com/sponsors/AmaLS367) |
+| Bybit referral | [Register with Bybit](https://www.bybit.com/invite?ref=6ANMX04) |
+| Binance referral | [Register with Binance](https://www.binance.com/referral/earn-together/refer2earn-usdc/claim?hl=ru&ref=GRO_28502_1KDBV&utm_source=referral_entrance) |
+
+Crypto wallets:
+
+| Network | Address |
+|---|---|
+| TON | `UQA0r9FHhWDP3HbS5bIN7RPUcF9H8AAzN_P3niATSS5SyALG` |
+| MetaMask (BTC) | `bc1q47h0yzwps6hgsmg809q9hy86e3n4jck29sgw6v` |
+
+Referral links may provide a small reward to the maintainer at no extra cost to you.
 
 ---
 
