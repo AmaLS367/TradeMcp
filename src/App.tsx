@@ -339,7 +339,7 @@ function OAuthAuthorize() {
     let cancelled = false;
     async function completeOAuth() {
       try {
-        const idToken = await user.getIdToken();
+        const idToken = await user?.getIdToken();
         const res = await fetch('/api/mcp/oauth/complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -423,7 +423,7 @@ function MCPSettings({ user }: { user: User }) {
    const generateKey = async () => {
      setGenerating(true);
      try {
-       const token = await user.getIdToken();
+       const token = await user?.getIdToken();
        const res = await fetch('/api/mcp/keys', {
          method: 'POST',
          headers: {
@@ -445,7 +445,7 @@ function MCPSettings({ user }: { user: User }) {
 
    const revokeKey = async (id: string) => {
      try {
-       const token = await user.getIdToken();
+       const token = await user?.getIdToken();
        await fetch(`/api/mcp/keys/${id}`, {
          method: 'DELETE',
          headers: { Authorization: `Bearer ${token}` }
@@ -615,7 +615,7 @@ function McpMarket({ user }: { user: User }) {
 
   const loadServers = async () => {
     try {
-      const idToken = await user.getIdToken();
+      const idToken = await user?.getIdToken();
       const response = await fetch('/api/mcp/mcp-servers', {
         headers: { Authorization: `Bearer ${idToken}` },
       });
@@ -634,7 +634,7 @@ function McpMarket({ user }: { user: User }) {
   }, [user.uid]);
 
   const serverRequest = async (serverId: string, method: 'PUT' | 'POST' | 'DELETE') => {
-    const idToken = await user.getIdToken();
+    const idToken = await user?.getIdToken();
     const url = method === 'POST'
       ? `/api/mcp/mcp-servers/${serverId}/test`
       : `/api/mcp/mcp-servers/${serverId}`;
@@ -793,7 +793,7 @@ function MarketDataProviders({ user }: { user: User }) {
 
   const loadProviders = async () => {
     try {
-      const idToken = await user.getIdToken();
+      const idToken = await user?.getIdToken();
       const response = await fetch('/api/mcp/data-providers', {
         headers: { Authorization: `Bearer ${idToken}` },
       });
@@ -836,7 +836,7 @@ function MarketDataProviders({ user }: { user: User }) {
   };
 
   const providerRequest = async (provider: string, method: 'PUT' | 'POST' | 'DELETE') => {
-    const idToken = await user.getIdToken();
+    const idToken = await user?.getIdToken();
     const url = method === 'POST'
       ? `/api/mcp/data-providers/${provider}/validate`
       : `/api/mcp/data-providers/${provider}`;
@@ -901,7 +901,7 @@ function MarketDataProviders({ user }: { user: User }) {
     setForms((current) => ({ ...current, [provider]: nextForm }));
     setBusyProvider(provider);
     try {
-      const idToken = await user.getIdToken();
+      const idToken = await user?.getIdToken();
       const response = await fetch(`/api/mcp/data-providers/${provider}`, {
         method: 'PUT',
         headers: {
@@ -1079,7 +1079,7 @@ function ExchangeConnections({ user }: { user: User }) {
       setValidationStatus('validating');
       setValidationError('');
       try {
-        const idToken = await user.getIdToken();
+        const idToken = await user?.getIdToken();
         const validateResponse = await fetch('/api/validate-keys', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
@@ -1117,7 +1117,7 @@ function ExchangeConnections({ user }: { user: User }) {
   const handleDelete = async (id: string) => {
       if (!confirm('Are you sure you want to delete this connection?')) return;
       try {
-          const idToken = await user.getIdToken();
+          const idToken = await user?.getIdToken();
           const response = await fetch(`/api/mcp/connections/${id}`, {
               method: 'DELETE',
               headers: { 'Authorization': `Bearer ${idToken}` }
