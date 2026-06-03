@@ -1,0 +1,32 @@
+image: node:20
+
+stages:
+  - verify
+  - build
+
+cache:
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - .npm/
+
+before_script:
+  - npm ci --cache .npm --prefer-offline
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - when: never
+
+verify:
+  stage: verify
+  script:
+    - npm run lint
+    - npm test
+
+build:
+  stage: build
+  script:
+    - npm run build
