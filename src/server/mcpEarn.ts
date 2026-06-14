@@ -75,11 +75,7 @@ export async function callBybitV5Earn(
 
   while (attempts < maxAttempts) {
     try {
-      console.log('[Bybit Earn DEBUG]', {
-        url: url.toString(),
-        headers,
-        params: cleanParams
-      });
+
       const response = await fetch(url.toString(), { method: 'GET', headers });
       
       if (response.status === 429) {
