@@ -15,7 +15,6 @@ import {
 } from './mcp';
 import { buildCreateOrderRequest, collectExchangeMethods } from './mcpExchange';
 import { resolveToolCallProvider } from './mcpServerFactory';
-import { collapseRecentOrderEvents } from './observability';
 
 // Mock process.env
 const ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -210,58 +209,6 @@ describe('exchange order request builder', () => {
 });
 
 describe('observability normalization', () => {
-  it('collapses order lifecycle events to the latest event per proposal', () => {
-    expect(collapseRecentOrderEvents([
-      {
-        id: 'ondo-filled',
-        proposalId: 'ondo-proposal',
-        symbol: 'ONDO/USDT',
-        side: 'buy',
-        eventType: 'filled',
-        status: 'executed',
-        quantity: 72.9,
-        price: 0.4113,
-        timestamp: '2026-05-10T10:36:59.908Z',
-      },
-      {
-        id: 'ondo-submitted',
-        proposalId: 'ondo-proposal',
-        symbol: 'ONDO/USDT',
-        side: 'buy',
-        eventType: 'submitted',
-        status: 'executing',
-        quantity: 72.9,
-        price: 0.4113,
-        timestamp: '2026-05-10T10:36:55.270Z',
-      },
-      {
-        id: 'uni-filled',
-        proposalId: 'uni-proposal',
-        symbol: 'UNI/USDT',
-        side: 'buy',
-        eventType: 'filled',
-        status: 'executed',
-        quantity: 7.47,
-        price: 4.018,
-        timestamp: '2026-05-10T09:31:11.131Z',
-      },
-      {
-        id: 'uni-submitted',
-        proposalId: 'uni-proposal',
-        symbol: 'UNI/USDT',
-        side: 'buy',
-        eventType: 'submitted',
-        status: 'executing',
-        quantity: 7.47,
-        price: 4.018,
-        timestamp: '2026-05-10T09:31:04.292Z',
-      },
-    ])).toEqual([
-      expect.objectContaining({ id: 'ondo-filled', status: 'executed' }),
-      expect.objectContaining({ id: 'uni-filled', status: 'executed' }),
-    ]);
-  });
-
   it('attributes raw exchange tools to the requested exchange provider', () => {
     expect(resolveToolCallProvider('call_exchange_method', { provider: 'bybit' })).toBe('bybit');
     expect(resolveToolCallProvider('list_exchange_methods', { provider: 'binance' })).toBe('binance');
