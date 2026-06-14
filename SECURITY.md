@@ -38,5 +38,6 @@ We will investigate all reports promptly and coordinate a patch release prior to
 
 Trade MCP is built with security as a foundational layer:
 - **AES-256-GCM:** All user-supplied exchange keys and data provider secrets are encrypted locally using AES-256-GCM before writing to the database.
-- **Key Isolation:** The encryption key (`ENCRYPTION_KEY`) is stored entirely in memory via environmental variables and is never written to Firestore.
-- **OAuth Scope Verification:** All client connections are validated via OAuth 2.0 PKCE, restricting tool access according to client profiles.
+- **Server-Side Keying:** Stored credentials are encrypted with the server-side `ENCRYPTION_KEY`, which is loaded from the runtime environment and is never written to Firestore.
+- **Key Risk:** `ENCRYPTION_KEY` is a shared application secret. Compromise of this key together with database access can decrypt stored user credentials, so production operators should protect and rotate it carefully and restrict Firestore/service-account access.
+- **OAuth Scope Verification:** All client connections are validated via OAuth 2.0 PKCE, restricting tool and raw exchange method access according to client profiles.

@@ -30,13 +30,13 @@ const PROFILES: { id: Profile; label: string; description: string; tools: string
   {
     id: 'safe_research',
     label: 'Safe Research',
-    description: 'Market data, prices, news, research, and raw Binance/Bybit API access.',
-    tools: 'CoinGecko · Binance public · TAAPI.IO · CryptoPanic · NewsAPI · Messari · FX data · search · fetch · list_exchange_methods · call_exchange_method',
+    description: 'Market data, prices, news, research, and public read-only Binance/Bybit API access.',
+    tools: 'CoinGecko · Binance public · TAAPI.IO · CryptoPanic · NewsAPI · Messari · FX data · search · fetch · public list_exchange_methods · public call_exchange_method',
   },
   {
     id: 'trading_review',
     label: 'Trading Review',
-    description: 'Research tools + raw exchange API access + account balances + trade proposals.',
+    description: 'Research tools + public raw exchange reads + account balances + trade proposals.',
     tools: 'All safe_research tools · get_account_summary · create_trade_proposal',
   },
   {

@@ -51,7 +51,7 @@
 
 **`list_exchange_methods`** — Discover callable CCXT methods for Binance or Bybit before making a raw API call.
 
-**`call_exchange_method`** — Call any CCXT method (public, private, trading, transfer, raw endpoint) on the user's exchange connection.
+**`call_exchange_method`** — Call a CCXT method on the user's exchange connection. In `safe_research` and `trading_review`, this is limited to public read-only market-data methods. Private, trading, transfer, and withdrawal methods require `full_access`.
 
 > ⚠️ Use these only when built-in tools cannot answer the question.
 
@@ -173,7 +173,7 @@ Three profiles control which tools are available:
 
 | Profile | 🎯 Includes |
 |---------|-------------|
-| `safe_research` | 📖 Research guide + 💱 Forex + 📈 Crypto + 💸 public Earn + 🔌 Raw exchange + 🔍 Search |
+| `safe_research` | 📖 Research guide + 💱 Forex + 📈 Crypto + 💸 public Earn + 🔌 public raw exchange reads + 🔍 Search |
 | `trading_review` | Everything above + 📊 Observability + 💰 Account + 💸 private Earn + 📝 Proposals |
 | `full_access` | 🌟 Everything (default) |
 

@@ -49,7 +49,7 @@
 
 **Trade MCP** transforms AI coding assistants (like Cursor, Claude, and ChatGPT) into secure, production-ready trading agents.
 
-Instead of configuring dozens of local, brittle scripts or exposing raw exchange API keys to LLMs, Trade MCP provides a single, OAuth-secured remote hub. It bridges the gap between powerful language models and secure financial execution by enforcing multi-tenant encryption, granular security profiles, and a robust human-in-the-loop approval mechanism for all trade executions.
+Instead of configuring dozens of local, brittle scripts or exposing raw exchange API keys to LLMs, Trade MCP provides a single, OAuth-secured remote hub. It bridges the gap between powerful language models and secure financial execution by encrypting stored credentials, enforcing granular security profiles, and requiring human-in-the-loop approval for staged trade execution.
 
 ---
 
@@ -57,8 +57,8 @@ Instead of configuring dozens of local, brittle scripts or exposing raw exchange
 
 Setting up algorithmic execution usually requires managing complex local configurations, system services, and raw secrets. Trade MCP changes this:
 
-- **🔐 Secured Credentials:** Exchange connections (Binance, Bybit) and provider API keys are fully encrypted per user via AES-256-GCM. Decryption keys never touch the database.
-- **🛡️ Granular Safety Policies:** MCP tools are grouped into profiles (`safe_research`, `trading_review`, `full_admin`). Clients cannot run tools above their approved profile.
+- **🔐 Secured Credentials:** Exchange connections (Binance, Bybit) and provider API keys are encrypted with AES-256-GCM using the server-side `ENCRYPTION_KEY`. Decryption keys never touch the database.
+- **🛡️ Granular Safety Policies:** MCP tools are grouped into profiles (`safe_research`, `trading_review`, `full_access`). Clients cannot run tools above their approved profile.
 - **🤝 Human-Approved Execution:** High-risk write actions (submitting orders, moving funds) generate structured proposals that require explicit user confirmation through the dashboard before executing.
 - **📊 Unified Multi-Exchange Earn:** Easily search, compare, and track active yield positions across Binance (Flexible/Locked) and Bybit (Flexible/Fixed-term Featured savings).
 - **🌐 Remote-First Architecture:** No local dependencies. Works perfectly across cloud servers (like Docker on Contabo), local environments, and SaaS AI platforms.

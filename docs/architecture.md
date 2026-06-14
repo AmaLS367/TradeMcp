@@ -24,7 +24,7 @@
 **Uses:**
 - 💰 `get_account_summary` — Read balances
 - 📝 `create_trade_proposal` — Stage trades, including approved CCXT order `params`
-- 🔌 `list_exchange_methods` / `call_exchange_method` — Raw API access
+- 🔌 `list_exchange_methods` / `call_exchange_method` — Raw CCXT access; `safe_research` and `trading_review` are limited to public read-only market-data methods, while unrestricted private/trading/transfer methods require `full_access`
 
 **Validation:** Keys are tested against the exchange before saving. Binance uses `GET /api/v3/account`, Bybit uses `GET /v5/account/wallet-balance`.
 
@@ -55,7 +55,7 @@
 | **NewsAPI** | 🗞️ General news articles, top headlines, source discovery | `apiKey`, `baseUrl` |
 | **TAAPI.IO** | 📈 Ready crypto technical indicators and bulk indicator queries | `apiKey`, `baseUrl` |
 
-**🔐 Security:** Keys are encrypted with AES-256-GCM before storage and decrypted server-side only when making API calls.
+**🔐 Security:** Keys are encrypted with AES-256-GCM before storage using the server-side `ENCRYPTION_KEY` and decrypted server-side only when making API calls. Compromise of this shared key plus database access can decrypt stored credentials.
 
 > 🎯 **Manage in:** Dashboard → **Market Data Providers**
 
