@@ -261,7 +261,7 @@ export class FirebaseOAuthProvider implements OAuthServerProvider {
   }
 }
 
-function isLoopbackCallbackUri(uri: string) {
+export function isLoopbackCallbackUri(uri: string) {
   try {
     const url = new URL(uri);
     return url.protocol === 'http:' &&
@@ -272,7 +272,7 @@ function isLoopbackCallbackUri(uri: string) {
   }
 }
 
-function isRegisteredRedirectUri(client: OAuthClientInformationFull, redirectUri: string) {
+export function isRegisteredRedirectUri(client: OAuthClientInformationFull, redirectUri: string) {
   if (client.redirect_uris.includes(redirectUri)) {
     return true;
   }
