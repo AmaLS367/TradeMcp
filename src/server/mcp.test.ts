@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import ccxt from 'ccxt';
 import {
   decrypt,
   encrypt,
@@ -8,9 +9,11 @@ import {
   resolveEffectiveMcpProfile,
   sanitizeFirestoreData,
   shouldIncludeTool,
+  shouldAllowRawExchangeMethod,
+  filterRawExchangeMethodsForProfile,
   TRADEMCP_DOCS_TOOL_NAME,
 } from './mcp';
-import { buildCreateOrderRequest } from './mcpExchange';
+import { buildCreateOrderRequest, collectExchangeMethods } from './mcpExchange';
 import { resolveToolCallProvider } from './mcpServerFactory';
 import { collapseRecentOrderEvents } from './observability';
 
@@ -97,6 +100,55 @@ describe('MCP profile tool visibility', () => {
       expect(shouldIncludeTool(toolName, 'trading_review')).toBe(true);
       expect(shouldIncludeTool(toolName, 'full_access')).toBe(true);
     }
+  });
+
+  it('limits raw exchange method calls to public read methods outside full access', () => {
+    for (const profile of ['safe_research', 'trading_review'] as const) {
+      expect(shouldAllowRawExchangeMethod('fetchTicker', profile)).toBe(true);
+      expect(shouldAllowRawExchangeMethod('fetchOrderBook', profile)).toBe(true);
+      expect(shouldAllowRawExchangeMethod('loadMarkets', profile)).toBe(true);
+      expect(shouldAllowRawExchangeMethod('publicGetTicker24hr', profile)).toBe(true);
+      expect(shouldAllowRawExchangeMethod('createOrder', profile)).toBe(false);
+      expect(shouldAllowRawExchangeMethod('withdraw', profile)).toBe(false);
+      expect(shouldAllowRawExchangeMethod('privatePostOrder', profile)).toBe(false);
+      expect(shouldAllowRawExchangeMethod('privateGetAccount', profile)).toBe(false);
+    }
+  });
+
+  it('keeps raw exchange method calls unrestricted for full access', () => {
+    expect(shouldAllowRawExchangeMethod('createOrder', 'full_access')).toBe(true);
+    expect(shouldAllowRawExchangeMethod('withdraw', 'full_access')).toBe(true);
+    expect(shouldAllowRawExchangeMethod('privatePostOrder', 'full_access')).toBe(true);
+  });
+
+  it('filters listed raw exchange methods to callable methods for the active profile', () => {
+    const methods = [
+      'fetchTicker',
+      'fetchOrderBook',
+      'loadMarkets',
+      'publicGetTicker24hr',
+      'createOrder',
+      'withdraw',
+      'privatePostOrder',
+    ];
+
+    expect(filterRawExchangeMethodsForProfile(methods, 'safe_research')).toEqual([
+      'fetchTicker',
+      'fetchOrderBook',
+      'loadMarkets',
+      'publicGetTicker24hr',
+    ]);
+    expect(filterRawExchangeMethodsForProfile(methods, 'full_access')).toEqual(methods);
+  });
+
+  it('filters dangerous real CCXT methods out of safe research method lists', () => {
+    const exchange = new ccxt.binance();
+    const safeMethods = filterRawExchangeMethodsForProfile(collectExchangeMethods(exchange), 'safe_research');
+
+    expect(safeMethods).toContain('fetchTicker');
+    expect(safeMethods).not.toContain('createOrder');
+    expect(safeMethods).not.toContain('withdraw');
+    expect(safeMethods).not.toContain('privatePostOrder');
   });
 
   it('exposes TradeMCP research guide in safe research profiles', () => {

@@ -38,7 +38,7 @@ import {
 } from './mcpMarketplace.js';
 import { db } from './mcpFirebase.js';
 import { TRADEMCP_DOCS_TOOL_NAME, getTradeMcpResearchGuide } from './tradeMcpResearchGuide.js';
-import { MARKET_DATA_MCP_TOOL_NAMES, OBSERVABILITY_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, isMarketplaceToolAllowed, shouldIncludeTool } from './mcpToolPolicy.js';
+import { MARKET_DATA_MCP_TOOL_NAMES, OBSERVABILITY_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, filterRawExchangeMethodsForProfile, isMarketplaceToolAllowed, shouldAllowRawExchangeMethod, shouldIncludeTool } from './mcpToolPolicy.js';
 import {
     assertMethodCallable,
     collectExchangeMethods,
@@ -271,7 +271,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
         capabilities: {
             tools: {}
         },
-        instructions: "Trade MCP exposes market data, crypto research, locally calculated crypto technical indicators from Binance candles, exchange account reads, human-approved trade proposal tools, and raw Binance/Bybit CCXT API access for the authenticated dashboard user. Before deep crypto fundamental or technical analysis, call get_trademcp_research_guide to choose the correct tool sequence and source-priority rules. list_exchange_methods and call_exchange_method are available in every client profile and can call public, private, trading, transfer, and raw endpoint methods when the user's exchange connection has permissions."
+        instructions: "Trade MCP exposes market data, crypto research, locally calculated crypto technical indicators from Binance candles, exchange account reads, human-approved trade proposal tools, and raw Binance/Bybit CCXT API access for the authenticated dashboard user. Before deep crypto fundamental or technical analysis, call get_trademcp_research_guide to choose the correct tool sequence and source-priority rules. list_exchange_methods and call_exchange_method are available in every client profile, but safe_research and trading_review can only call public read-only market-data methods. Private, trading, transfer, and withdrawal raw exchange methods require full_access."
     });
 
     server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -326,7 +326,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 },
                 {
                     name: "list_exchange_methods",
-                    description: "Use this to discover all callable public CCXT methods exposed by the Binance or Bybit instance before making a raw exchange call. This includes unified methods and raw public/private/trading/transfer endpoint methods available to the user's API key.",
+                    description: "Use this to discover callable CCXT methods exposed by the Binance or Bybit instance before making a raw exchange call. The result is filtered by the active profile: safe_research and trading_review list only public read-only market-data methods; full_access lists unrestricted callable methods available to the user's API key.",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -343,12 +343,12 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 },
                 {
                     name: "call_exchange_method",
-                    description: "Call any public callable CCXT method on Binance or Bybit, including public, private, trading, transfer, and raw endpoint methods. The call uses the authenticated user's active exchange connection and whatever permissions that API key has.",
+                    description: "Call a CCXT method on Binance or Bybit. In safe_research and trading_review, only public read-only market-data methods are allowed. Private, trading, transfer, and withdrawal methods require full_access. The call uses the authenticated user's active exchange connection and whatever permissions that API key has.",
                     inputSchema: {
                         type: "object",
                         properties: {
                             provider: { type: "string", enum: ["binance", "bybit"] },
-                            method: { type: "string", description: "Exact CCXT method name, for example fetchTicker, fetchOpenOrders, privateGetAccount, privatePostOrder, or another method returned by list_exchange_methods." },
+                            method: { type: "string", description: "Exact CCXT method name returned by list_exchange_methods. Public profiles should use read-only methods such as fetchTicker or fetchOrderBook; private, trading, transfer, and withdrawal methods require full_access." },
                             args: {
                                 type: "array",
                                 description: "Positional arguments passed directly to the CCXT method.",
@@ -1126,9 +1126,10 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
 
             const exchange = await createExchange(provider, userId, (args?.options as Record<string, unknown>) || {});
             const filter = typeof args?.filter === 'string' ? args.filter.toLowerCase() : '';
-            const methods = collectExchangeMethods(exchange).filter(method => (
-                filter ? method.toLowerCase().includes(filter) : true
-            ));
+            const methods = filterRawExchangeMethodsForProfile(collectExchangeMethods(exchange), profile)
+                .filter(method => (
+                    filter ? method.toLowerCase().includes(filter) : true
+                ));
             const payload: Record<string, unknown> = {
                 provider,
                 methodCount: methods.length,
@@ -1156,6 +1157,9 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
 
             const exchange = await createExchange(provider, userId, (args?.options as Record<string, unknown>) || {});
             assertMethodCallable(exchange, args?.method);
+            if (!shouldAllowRawExchangeMethod(args.method, profile)) {
+                throw new Error(`Exchange method "${args.method}" is not allowed for profile "${profile || 'full_access'}". Use create_trade_proposal for staged trades or full_access for unrestricted raw exchange access.`);
+            }
 
             const callArgs = Array.isArray(args?.args)
                 ? args.args

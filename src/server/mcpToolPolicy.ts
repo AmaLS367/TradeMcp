@@ -7,6 +7,18 @@ export const OBSERVABILITY_MCP_TOOL_NAMES = ['get_observability_metrics', 'get_o
 export const EARN_PUBLIC_MCP_TOOL_NAMES = ['get_bybit_earn_products', 'get_binance_locked_earn_products'] as const;
 export const EARN_PRIVATE_MCP_TOOL_NAMES = ['get_bybit_earn_position', 'get_binance_earn_positions'] as const;
 
+const PUBLIC_RAW_EXCHANGE_METHOD_NAMES = new Set([
+  'loadMarkets',
+  'fetchMarkets',
+  'fetchTicker',
+  'fetchTickers',
+  'fetchOrderBook',
+  'fetchOHLCV',
+  'fetchTrades',
+  'fetchTime',
+  'fetchStatus',
+]);
+
 const SAFE_RESEARCH_TOOL_NAMES = new Set([
   TRADEMCP_DOCS_TOOL_NAME,
   ...MARKET_DATA_MCP_TOOL_NAMES,
@@ -31,6 +43,17 @@ export function shouldIncludeTool(name: string, profile?: string): boolean {
   if (profile === 'trading_review') return TRADING_REVIEW_TOOL_NAMES.has(name);
   if (profile === 'safe_research') return SAFE_RESEARCH_TOOL_NAMES.has(name);
   return true;
+}
+
+export function shouldAllowRawExchangeMethod(method: unknown, profile?: string): method is string {
+  if (typeof method !== 'string' || !method.trim()) return false;
+  if (!profile || profile === 'full_access') return true;
+  if (method.startsWith('public')) return true;
+  return PUBLIC_RAW_EXCHANGE_METHOD_NAMES.has(method);
+}
+
+export function filterRawExchangeMethodsForProfile(methods: readonly string[], profile?: string) {
+  return methods.filter((method) => shouldAllowRawExchangeMethod(method, profile));
 }
 
 export function isMarketplaceToolAllowed(_toolName: string, profile?: string): boolean {

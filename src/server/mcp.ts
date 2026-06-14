@@ -40,7 +40,7 @@ import { buildCreateOrderRequest } from './mcpExchange.js';
 export { ALGORITHM, decrypt, encrypt, getEncryptionKey } from './mcpCrypto.js';
 export { sanitizeFirestoreData } from './firestoreUtils.js';
 export { TRADEMCP_DOCS_TOOL_NAME, getTradeMcpResearchGuide } from './tradeMcpResearchGuide.js';
-export { MARKET_DATA_MCP_TOOL_NAMES, OBSERVABILITY_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, shouldIncludeTool } from './mcpToolPolicy.js';
+export { MARKET_DATA_MCP_TOOL_NAMES, OBSERVABILITY_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, filterRawExchangeMethodsForProfile, shouldAllowRawExchangeMethod, shouldIncludeTool } from './mcpToolPolicy.js';
 export { db } from './mcpFirebase.js';
 import { detectClientType, recordOrderEvent, getToolMetrics, getActiveAlerts } from './observability.js';
 
