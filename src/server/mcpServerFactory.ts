@@ -997,15 +997,27 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
             }
             
             const balances: any = {};
-            for (const doc of connectionsSnap.docs) {
+            const balancePromises = connectionsSnap.docs.map(async (doc) => {
                 const data = doc.data();
                 if (data.provider === 'binance' || data.provider === 'bybit') {
                     try {
-                           const exchange = await createExchange(data.provider, userId);
-                           const balance = await exchange.fetchBalance();
-                           balances[data.provider] = balance.total;
+                        const exchange = await createExchange(data.provider, userId);
+                        const balance = await exchange.fetchBalance();
+                        return { provider: data.provider, balance: balance.total };
                     } catch (err: any) {
-                       balances[data.provider] = { error: err.message };
+                        return { provider: data.provider, error: err.message };
+                    }
+                }
+                return null;
+            });
+
+            const results = await Promise.all(balancePromises);
+            for (const result of results) {
+                if (result) {
+                    if (result.error) {
+                        balances[result.provider] = { error: result.error };
+                    } else {
+                        balances[result.provider] = result.balance;
                     }
                 }
             }
