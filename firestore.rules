@@ -118,7 +118,7 @@ service cloud.firestore {
                data.type is string && data.type.size() <= 64 &&
                data.message is string && data.message.size() <= 1024 &&
                data.severity is string && data.severity.size() <= 32 &&
-               data.count is number &&
+               data.count is number && data.count >= 0 &&
                data.resolved is bool &&
                (data.createdAt is string ? data.createdAt.size() <= 128 : data.createdAt is timestamp) &&
                (data.lastOccurred is string ? data.lastOccurred.size() <= 128 : data.lastOccurred is timestamp) &&
@@ -128,7 +128,8 @@ service cloud.firestore {
       }
 
       allow read: if isVerified() && resource.data.userId == request.auth.uid;
-      allow create, update: if isVerified() && isValidId(doc) && isValidAlert(incoming());
+      allow create: if isVerified() && isValidId(doc) && isValidAlert(incoming());
+      allow update: if isVerified() && isValidId(doc) && resource.data.userId == request.auth.uid && isValidAlert(incoming()) && incoming().userId == resource.data.userId;
       allow delete: if isVerified() && resource.data.userId == request.auth.uid;
     }
   }
