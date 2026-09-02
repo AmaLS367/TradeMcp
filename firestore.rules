@@ -129,7 +129,7 @@ service cloud.firestore {
 
       allow read: if isVerified() && resource.data.userId == request.auth.uid;
       allow create: if isVerified() && isValidId(doc) && isValidAlert(incoming());
-      allow update: if isVerified() && isValidId(doc) && resource.data.userId == request.auth.uid && isValidAlert(incoming()) && incoming().userId == resource.data.userId;
+      allow update: if isVerified() && isValidId(doc) && resource.data.userId == request.auth.uid && incoming().userId == resource.data.userId && isValidAlert(incoming());
       allow delete: if isVerified() && resource.data.userId == request.auth.uid;
     }
   }
