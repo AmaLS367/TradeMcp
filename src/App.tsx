@@ -1176,7 +1176,7 @@ function ExchangeConnections({ user }: { user: User }) {
                           <motion.div 
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ opacity: 0, y: 0 }}
+                            exit={{ height: 0, opacity: 0 }}
                             className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2 border ${
                               validationStatus === 'validating' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
                               validationStatus === 'valid' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
