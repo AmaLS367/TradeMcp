@@ -86,6 +86,25 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["eventType", "source", "payload", "createdAt"]
+    },
+    "Alert": {
+      "title": "Observability Alert",
+      "description": "System alert generated for provider failures, auth errors, or high latencies.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string" },
+        "provider": { "type": "string" },
+        "toolName": { "type": "string" },
+        "message": { "type": "string" },
+        "severity": { "type": "string" },
+        "count": { "type": "number" },
+        "lastOccurred": { "type": "string", "format": "date-time" },
+        "resolved": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "resolvedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "message", "severity", "count", "resolved", "createdAt", "lastOccurred"]
     }
   },
   "firestore": {
@@ -112,6 +131,10 @@
     "/users/{userId}/audit_logs/{logId}": {
       "schema": { "$ref": "#/entities/AuditLog" },
       "description": "Audit trail for all AI and user actions"
+    },
+    "/alerts/{doc}": {
+      "schema": { "$ref": "#/entities/Alert" },
+      "description": "Observability alerts"
     }
   }
 }

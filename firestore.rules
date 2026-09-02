@@ -111,8 +111,26 @@ service cloud.firestore {
     }
 
     match /alerts/{doc} {
-      allow read: if isVerified() && request.auth.uid == resource.data.userId;
-      allow write: if isVerified() && request.auth.uid == request.resource.data.userId;
+      function isValidAlert(data) {
+        return data.keys().hasAll(['userId', 'type', 'message', 'severity', 'count', 'resolved', 'createdAt', 'lastOccurred']) &&
+               data.keys().hasOnly(['userId', 'type', 'provider', 'toolName', 'message', 'severity', 'count', 'lastOccurred', 'resolved', 'createdAt', 'resolvedAt']) &&
+               data.userId == request.auth.uid &&
+               data.type is string && data.type.size() <= 64 &&
+               data.message is string && data.message.size() <= 1024 &&
+               data.severity is string && data.severity.size() <= 32 &&
+               data.count is number && data.count >= 0 &&
+               data.resolved is bool &&
+               (data.createdAt is string ? data.createdAt.size() <= 128 : data.createdAt is timestamp) &&
+               (data.lastOccurred is string ? data.lastOccurred.size() <= 128 : data.lastOccurred is timestamp) &&
+               (!('provider' in data) || (data.provider is string && data.provider.size() <= 128)) &&
+               (!('toolName' in data) || (data.toolName is string && data.toolName.size() <= 128)) &&
+               (!('resolvedAt' in data) || (data.resolvedAt is string ? data.resolvedAt.size() <= 128 : data.resolvedAt is timestamp));
+      }
+
+      allow read: if isVerified() && resource.data.userId == request.auth.uid;
+      allow create: if isVerified() && isValidId(doc) && isValidAlert(incoming());
+      allow update: if isVerified() && isValidId(doc) && resource.data.userId == request.auth.uid && incoming().userId == resource.data.userId && isValidAlert(incoming());
+      allow delete: if isVerified() && resource.data.userId == request.auth.uid;
     }
   }
 }
