@@ -25,6 +25,7 @@ GEMINI.md
 TASKS.md
 firebase-applet-config.json
 /superpowers/
+/docs/superpowers/
 .venv/
 __pycache__/
 *.pyc
