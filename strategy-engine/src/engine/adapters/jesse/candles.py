@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import functools
+import threading
 
 import numpy as np
 
@@ -12,6 +14,19 @@ from engine.domain.shared.errors import DatasetUnavailable
 
 _CANDLE_COLUMNS = 6
 _ONE_MINUTE_MS = 60_000
+
+# Jesse's research API keeps global state and a shared DB connection, while the
+# use case calls this repository from worker threads. Serialize all access.
+_JESSE_LOCK = threading.Lock()
+
+
+def _serialized(method):
+    @functools.wraps(method)
+    def wrapper(*args, **kwargs):
+        with _JESSE_LOCK:
+            return method(*args, **kwargs)
+
+    return wrapper
 
 
 def _utc_day_start(timestamp_ms: int) -> int:
@@ -86,6 +101,7 @@ def _normalize_and_validate(
 
 
 class JesseCandleRepository:
+    @_serialized
     def ensure(
         self,
         *,
@@ -153,6 +169,7 @@ class JesseCandleRepository:
                 f"could not prepare candles for {symbol} on {exchange}: {error}"
             ) from error
 
+    @_serialized
     def load(
         self,
         *,
