@@ -2,11 +2,13 @@ import numpy as np
 import pytest
 
 from engine.adapters.jesse.candles import JesseCandleRepository
-from engine.domain.dataset.models import DateRange
-from engine.domain.shared.errors import DatasetUnavailable
+from engine.adapters.sandbox.codec import _MAX_FRAME_BYTES
+from engine.domain.dataset.models import MAX_DATASET_ROWS, DateRange
+from engine.domain.shared.errors import DatasetTooLarge, DatasetUnavailable
 
+DAY_MS = 86_400_000
 DAY_START = 1_609_459_200_000
-DAY_FINISH = DAY_START + 86_400_000
+DAY_FINISH = DAY_START + DAY_MS
 
 
 def _candles() -> np.ndarray:
@@ -66,3 +68,41 @@ def test_load_rejects_ranges_that_jesse_would_silently_round_to_days() -> None:
             date_range=DateRange(DAY_START + 60_000, DAY_FINISH),
             warmup_candles_num=0,
         )
+
+
+def _refuse_fetch(**kwargs):
+    raise AssertionError("an oversized request must not reach Jesse")
+
+
+@pytest.mark.parametrize(
+    ("days", "timeframe", "warmup_candles_num"),
+    [
+        (MAX_DATASET_ROWS // 1_440 + 1, "1m", 0),  # the trading range alone
+        (1, "1D", 5_000),  # a one-day range with ~14 years of warmup
+    ],
+)
+@pytest.mark.parametrize("method", ["ensure", "load"])
+def test_oversized_requests_are_rejected_before_touching_the_database(
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    days: int,
+    timeframe: str,
+    warmup_candles_num: int,
+) -> None:
+    repo = JesseCandleRepository()
+    monkeypatch.setattr(repo, "_fetch", _refuse_fetch)
+
+    with pytest.raises(DatasetTooLarge):
+        getattr(repo, method)(
+            exchange="Binance",
+            symbol="BTC-USDT",
+            timeframe=timeframe,
+            date_range=DateRange(DAY_START, DAY_START + days * DAY_MS),
+            warmup_candles_num=warmup_candles_num,
+        )
+
+
+def test_largest_allowed_dataset_fits_in_one_runner_frame() -> None:
+    # Six float64 columns per candle, with a quarter of the frame left for the
+    # JSON header (strategy source and parameters).
+    assert MAX_DATASET_ROWS * 6 * 8 <= _MAX_FRAME_BYTES * 3 // 4

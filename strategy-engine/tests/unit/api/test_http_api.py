@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from engine.adapters.sandbox.fake_runner import FakeRunner
@@ -20,6 +21,7 @@ class Good(Strategy):
 """
 
 RANGE = DateRange(1_600_000_000_000, 1_600_086_400_000)
+GIT_SHA = "abc1234"
 
 BACKTEST_BODY = {
     "source_code": GOOD,
@@ -52,7 +54,9 @@ OK_RESULT = RunnerResult(
 
 
 def _client_and_runner(runner_result: RunnerResult) -> tuple[TestClient, FakeRunner]:
-    app = create_app(Settings(api_token=None, require_jesse_project=False))
+    app = create_app(
+        Settings(api_token=None, require_jesse_project=False, git_sha=GIT_SHA)
+    )
     runner = FakeRunner(runner_result)
     usecase = RunBacktest(_Repo(), runner, EngineVersions("0.2.0", "3.1.3"))
     app.dependency_overrides[get_run_backtest] = lambda: usecase
@@ -113,6 +117,25 @@ def test_bad_date_range_is_422() -> None:
     assert malformed.status_code == 422
 
 
+def test_century_long_range_is_rejected_before_any_candle_work() -> None:
+    client, runner = _client_and_runner(OK_RESULT)
+
+    response = client.post(
+        "/api/v1/backtest",
+        json={**BACKTEST_BODY, "start_date": "1925-01-01", "end_date": "2025-01-01"},
+    )
+
+    assert response.status_code == 422
+    assert "must not exceed" in response.text
+    assert runner.calls == []
+
+
+def test_app_refuses_to_start_without_a_git_sha() -> None:
+    """run_hash includes the git SHA; a placeholder makes builds indistinguishable."""
+    with pytest.raises(RuntimeError, match="ENGINE_GIT_SHA"):
+        create_app(Settings(api_token=None, require_jesse_project=False))
+
+
 def test_slash_symbol_is_normalized() -> None:
     client, runner = _client_and_runner(OK_RESULT)
 
@@ -141,7 +164,9 @@ def test_runner_timeout_is_504() -> None:
 
 
 def test_token_is_required_when_configured() -> None:
-    app = create_app(Settings(api_token="s3cret", require_jesse_project=False))
+    app = create_app(
+        Settings(api_token="s3cret", require_jesse_project=False, git_sha=GIT_SHA)
+    )
     client = TestClient(app)
 
     assert client.post("/api/v1/strategy/validate", json={"source_code": GOOD}).status_code == 401

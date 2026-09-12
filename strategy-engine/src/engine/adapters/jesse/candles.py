@@ -9,8 +9,13 @@ import threading
 import numpy as np
 
 from engine.domain.dataset.hashing import dataset_hash
-from engine.domain.dataset.models import CandleBundle, DatasetRef, DateRange
-from engine.domain.shared.errors import DatasetUnavailable
+from engine.domain.dataset.models import (
+    MAX_DATASET_ROWS,
+    CandleBundle,
+    DatasetRef,
+    DateRange,
+)
+from engine.domain.shared.errors import DatasetTooLarge, DatasetUnavailable
 
 _CANDLE_COLUMNS = 6
 _ONE_MINUTE_MS = 60_000
@@ -50,6 +55,29 @@ def _validate_date_range(date_range: DateRange) -> None:
         raise DatasetUnavailable(
             "Jesse candle ranges must start and finish at UTC day boundaries"
         )
+
+
+def _warmup_minutes_within_limit(
+    date_range: DateRange,
+    timeframe: str,
+    warmup_candles_num: int,
+) -> int:
+    """Reject a request too large for one runner job before touching Jesse's DB."""
+    from jesse.helpers import timeframe_to_one_minutes
+
+    try:
+        warmup_minutes = warmup_candles_num * timeframe_to_one_minutes(timeframe)
+    except Exception as error:  # Jesse raises its own InvalidTimeframe.
+        raise DatasetUnavailable(f"unsupported timeframe {timeframe!r}") from error
+
+    trading_minutes = (date_range.finish_ms - date_range.start_ms) // _ONE_MINUTE_MS
+    if warmup_minutes + trading_minutes > MAX_DATASET_ROWS:
+        raise DatasetTooLarge(
+            f"{trading_minutes} trading + {warmup_minutes} warmup one-minute candles "
+            f"exceed the {MAX_DATASET_ROWS} candle limit; shorten the date range "
+            "or lower warmup_candles_num"
+        )
+    return warmup_minutes
 
 
 def _validate_trading_candles(
@@ -112,10 +140,14 @@ class JesseCandleRepository:
         warmup_candles_num: int,
     ) -> None:
         from jesse.exceptions import CandleNotFoundInDatabase
-        from jesse.helpers import timeframe_to_one_minutes
         from jesse.research import import_candles
 
         _validate_date_range(date_range)
+        warmup_minutes = _warmup_minutes_within_limit(
+            date_range,
+            timeframe,
+            warmup_candles_num,
+        )
         needs_import = False
         try:
             warmup, trading = self._fetch(
@@ -142,7 +174,6 @@ class JesseCandleRepository:
         if not needs_import:
             return
 
-        warmup_minutes = warmup_candles_num * timeframe_to_one_minutes(timeframe)
         import_start_ms = date_range.start_ms - warmup_minutes * _ONE_MINUTE_MS
         try:
             import_candles(
@@ -180,6 +211,7 @@ class JesseCandleRepository:
         warmup_candles_num: int,
     ) -> CandleBundle:
         _validate_date_range(date_range)
+        _warmup_minutes_within_limit(date_range, timeframe, warmup_candles_num)
         try:
             warmup, trading = self._fetch(
                 exchange=exchange,

@@ -5,6 +5,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from engine.domain.dataset.models import MAX_DATASET_ROWS
+
+# Cheap early rejection; the candle repository also counts warmup candles.
+MAX_RANGE_DAYS = MAX_DATASET_ROWS // (24 * 60)
 # Jesse 3 only knows provider names ("Binance Perpetual Futures", "Binance Spot",
 # ...). Backtests run with market_type="futures", so the short names clients
 # have always sent map to the matching perpetual market.
@@ -43,6 +47,8 @@ class BacktestRequest(BaseModel):
     def _check_range(self) -> BacktestRequest:
         if self.end_date <= self.start_date:
             raise ValueError("end_date must be after start_date")
+        if (self.end_date - self.start_date).days > MAX_RANGE_DAYS:
+            raise ValueError(f"date range must not exceed {MAX_RANGE_DAYS} days")
         return self
 
 

@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Warmup plus trading one-minute candles one runner job may carry. At 48 bytes
+# per row (six float64 columns) this stays well under the 128 MiB frame limit,
+# and it is enforced before Jesse imports or materializes anything.
+MAX_DATASET_ROWS = 2_000_000
+
 
 @dataclass(frozen=True)
 class DateRange:

@@ -14,7 +14,8 @@ services:
       context: ./strategy-engine
       dockerfile: docker/orchestrator.Dockerfile
       args:
-        GIT_SHA: ${GIT_SHA:-unknown}
+        # Part of every run_hash; deploy with GIT_SHA=`git rev-parse HEAD`.
+        GIT_SHA: ${GIT_SHA:?GIT_SHA is required, run with GIT_SHA=`git rev-parse HEAD`}
     container_name: trade_strategy_engine
     restart: unless-stopped
     environment:
@@ -57,18 +58,33 @@ services:
     # No network interfaces at all: the only channel is the Unix socket on the volume.
     network_mode: none
     read_only: true
+    # tini reaps orphans that strategy code leaves, so they cannot pile up as zombies.
+    init: true
     tmpfs:
-      - /tmp:size=128m,mode=1777
+      # 0711: workers cannot create files in /tmp itself, only inside their own
+      # per-run directory, so nothing survives into the next job.
+      - /tmp:size=128m,mode=0711
     # RLIMIT_AS per worker is virtual address space (numba/llvmlite map a lot);
     # the container limit bounds real memory for all concurrent workers.
     mem_limit: 1536m
-    pids_limit: 128
+    pids_limit: 192
+    # Strategy code can reach os through allowed packages. The server starts as
+    # root with only these capabilities so it can run each worker slot under its
+    # own uid (ENGINE_RUNNER_WORKER_UID_BASE + slot), hand it a scratch dir and
+    # kill whatever the slot leaves behind. Group 10001 is shared with
+    # strategy_engine for the socket; worker uids are not in it.
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - KILL
+      - SETGID
+      - SETUID
     security_opt:
       - no-new-privileges:true
-    user: "10001:10001"
+    user: "0:10001"
     environment:
+      ENGINE_RUNNER_WORKER_UID_BASE: "20000"
       ENGINE_RUNNER_TIMEOUT_SECONDS: "120"
       ENGINE_RUNNER_MEMORY_MB: "1024"
       # The default RLIMIT_FSIZE=0 kills a worker with SIGXFSZ on its first

@@ -36,7 +36,12 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 RUN groupadd -g 10001 appuser && useradd -u 10001 -g appuser -s /bin/false appuser
 COPY --from=builder --chown=10001:10001 /app /app
-RUN mkdir -p /run/engine /srv && chown -R 10001:10001 /run/engine /srv
+RUN mkdir -p /run/engine /srv && chown -R 10001:10001 /run/engine /srv \
+    && chmod 0770 /run/engine
 
-USER 10001:10001
+# The server needs root (with only CHOWN/KILL/SETUID/SETGID granted by compose)
+# to run every worker slot under its own uid starting at the base below; group
+# 10001 is what it shares with the orchestrator for the socket.
+ENV ENGINE_RUNNER_WORKER_UID_BASE=20000
+USER 0:10001
 CMD ["python", "-m", "engine.entrypoints.runner.server"]

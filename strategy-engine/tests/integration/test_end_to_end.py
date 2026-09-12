@@ -3,7 +3,8 @@
 Needs the compose stack with the e2e overlay (publishes the engine on
 127.0.0.1:18000 and shortens the runner deadline to 30s). Run from the host:
 
-    docker compose -f docker-compose.yml -f strategy-engine/docker/compose.e2e.yml up -d --build
+    GIT_SHA=$(git rev-parse HEAD) docker compose -f docker-compose.yml \\
+        -f strategy-engine/docker/compose.e2e.yml up -d --build
     cd strategy-engine
     ENGINE_BASE_URL=http://127.0.0.1:18000 ENGINE_API_TOKEN=<token> \\
         uv run pytest tests/integration/test_end_to_end.py -m integration -v
@@ -79,6 +80,21 @@ NETWORK_REACHABLE = _TEMPLATE.format(
         "\"python -c \\\"import socket; "
         "socket.create_connection(('1.1.1.1', 53), 2); print('up')\\\" 2>/dev/null\""
         ").read().strip() == 'up'"
+    ),
+    gate="SIGNAL",
+)
+
+# kill(-1) signals every process the caller is allowed to signal. While workers
+# shared the server's uid this took the whole runner down.
+SIGNALS_EVERYONE = _TEMPLATE.format(prelude="jh.os.kill(-1, 9)", gate="True")
+
+SOCKET_REMOVABLE = _TEMPLATE.format(
+    prelude=(
+        "try:\n"
+        "    jh.os.unlink('/run/engine/runner.sock')\n"
+        "    SIGNAL = True\n"
+        "except OSError:\n"
+        "    SIGNAL = False"
     ),
     gate="SIGNAL",
 )
@@ -161,6 +177,26 @@ def test_sandbox_escape_gets_no_network() -> None:
         "strategy code reached the network from inside the runner"
     )
     _assert_engine_healthy()
+
+
+def test_sandbox_escape_cannot_signal_the_runner() -> None:
+    response = _backtest(SIGNALS_EVERYONE)
+    assert response.status_code == 200, response.text
+
+    _assert_engine_healthy()
+    follow_up = _backtest(WORKING)
+    assert follow_up.status_code == 200, "the runner must survive kill(-1)"
+
+
+def test_sandbox_escape_cannot_remove_the_runner_socket() -> None:
+    response = _backtest(SOCKET_REMOVABLE)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["metrics"]["total_trades"] == 0, (
+        "strategy code removed the runner socket"
+    )
+    follow_up = _backtest(WORKING)
+    assert follow_up.status_code == 200, follow_up.text
 
 
 def test_missing_dataset_is_409_not_a_fabricated_result() -> None:

@@ -25,6 +25,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings.require_jesse_project:
         assert_jesse_project()
 
+    # The git SHA is part of every run_hash. With a placeholder, a rebuilt
+    # engine would hash the same backtest identically to the previous build.
+    if not settings.has_git_sha:
+        raise RuntimeError(
+            f"ENGINE_GIT_SHA must be the engine's commit SHA, got {settings.git_sha!r}"
+        )
+
     app = FastAPI(
         title="TradeMCP Strategy Engine",
         version=settings.engine_version,

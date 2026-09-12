@@ -17,6 +17,10 @@ class DatasetUnavailable(EngineError):
     """Candles for the requested range are unavailable."""
 
 
+class DatasetTooLarge(EngineError):
+    """The requested range would exceed what one runner job may carry."""
+
+
 class RunnerTimeout(EngineError):
     """The strategy exceeded its execution deadline."""
 

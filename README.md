@@ -154,7 +154,8 @@ npm start
 
 **🐳 Docker Deployment:**
 ```bash
-docker compose up -d --build
+# GIT_SHA is required: the strategy engine puts it into every backtest run_hash.
+GIT_SHA=$(git rev-parse HEAD) docker compose up -d --build
 ```
 
 ---

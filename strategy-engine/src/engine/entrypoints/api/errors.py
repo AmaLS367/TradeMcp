@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from engine.domain.shared.errors import (
+    DatasetTooLarge,
     DatasetUnavailable,
     RunnerCrashed,
     RunnerTimeout,
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 _STATUS_BY_ERROR: dict[type[Exception], int] = {
     SourceValidationError: 422,
+    DatasetTooLarge: 422,
     DatasetUnavailable: 409,
     RunnerTimeout: 504,
     RunnerCrashed: 502,
