@@ -213,7 +213,7 @@ git commit -m "feat(engine): add layered package skeleton with enforced dependen
   - `validate_source(source: str) -> SourceValidation`
   - `ALLOWED_ROOT_MODULES: frozenset[str]`
 
-- [ ] **Step 1: Написать падающие тесты на хеширование**
+- [x] **Step 1: Написать падающие тесты на хеширование**
 
 Создать `strategy-engine/tests/unit/domain/test_strategy_hashing.py`:
 
@@ -255,12 +255,12 @@ def test_trailing_whitespace_at_eof_is_ignored() -> None:
     assert normalize_source("a = 1\n\n\n  ") == normalize_source("a = 1")
 ```
 
-- [ ] **Step 2: Запустить и убедиться, что тесты падают**
+- [x] **Step 2: Запустить и убедиться, что тесты падают**
 
 Run: `cd strategy-engine && uv run pytest tests/unit/domain/test_strategy_hashing.py -v`
 Expected: FAIL с `ModuleNotFoundError: No module named 'engine.domain.strategy.hashing'`
 
-- [ ] **Step 3: Реализовать примитивы и хеширование**
+- [x] **Step 3: Реализовать примитивы и хеширование**
 
 `src/engine/domain/shared/hashing.py`:
 
@@ -355,12 +355,12 @@ def strategy_hash(source: str, parameters: Mapping[str, Any]) -> str:
     return sha256_of(normalize_source(source), canonical_json(dict(parameters)))
 ```
 
-- [ ] **Step 4: Запустить тесты хеширования**
+- [x] **Step 4: Запустить тесты хеширования**
 
 Run: `cd strategy-engine && uv run pytest tests/unit/domain/test_strategy_hashing.py -v`
 Expected: PASS (6 тестов)
 
-- [ ] **Step 5: Написать падающие тесты на AST-политику**
+- [x] **Step 5: Написать падающие тесты на AST-политику**
 
 Создать `strategy-engine/tests/unit/domain/test_source_policy.py`:
 
@@ -448,12 +448,12 @@ def test_syntax_error_is_reported_with_line() -> None:
     assert any("1" in e for e in result.errors)
 ```
 
-- [ ] **Step 6: Запустить и убедиться, что тесты падают**
+- [x] **Step 6: Запустить и убедиться, что тесты падают**
 
 Run: `cd strategy-engine && uv run pytest tests/unit/domain/test_source_policy.py -v`
 Expected: FAIL с `ModuleNotFoundError`
 
-- [ ] **Step 7: Реализовать модели и AST-политику**
+- [x] **Step 7: Реализовать модели и AST-политику**
 
 `src/engine/domain/strategy/models.py`:
 
@@ -597,12 +597,12 @@ def validate_source(source_code: str) -> SourceValidation:
     )
 ```
 
-- [ ] **Step 8: Запустить все тесты модуля**
+- [x] **Step 8: Запустить все тесты модуля**
 
 Run: `cd strategy-engine && uv run pytest tests/unit tests/architecture -v`
 Expected: PASS (все тесты, включая `lint-imports`)
 
-- [ ] **Step 9: Коммит**
+- [x] **Step 9: Коммит**
 
 ```bash
 git add strategy-engine/src/engine/domain strategy-engine/tests/unit
@@ -636,7 +636,7 @@ git commit -m "feat(engine): add domain primitives, strategy hashing and AST pol
   - `BacktestMetrics`, `EquityPoint`, `clean_float(value: Any) -> float | None`
   - `run_hash(*, strategy_hash, dataset_hash, engine_version, jesse_version, config, date_range, warmup_rows) -> str`
 
-- [ ] **Step 1: Написать падающие тесты датасета**
+- [x] **Step 1: Написать падающие тесты датасета**
 
 Создать `strategy-engine/tests/unit/domain/test_dataset.py`:
 
@@ -681,7 +681,7 @@ def test_symbol_participates_in_hash() -> None:
     assert a != b
 ```
 
-- [ ] **Step 2: Написать падающие тесты метрик**
+- [x] **Step 2: Написать падающие тесты метрик**
 
 Создать `strategy-engine/tests/unit/domain/test_metrics.py`:
 
@@ -714,7 +714,7 @@ def test_non_numeric_becomes_none() -> None:
     assert clean_float("n/a") is None
 ```
 
-- [ ] **Step 3: Написать падающие тесты run_hash**
+- [x] **Step 3: Написать падающие тесты run_hash**
 
 Создать `strategy-engine/tests/unit/domain/test_run_hashing.py`:
 
@@ -771,12 +771,12 @@ def test_fee_rate_participates() -> None:
     assert run_hash(**BASE) != run_hash(**other)
 ```
 
-- [ ] **Step 4: Запустить и убедиться, что тесты падают**
+- [x] **Step 4: Запустить и убедиться, что тесты падают**
 
 Run: `cd strategy-engine && uv run pytest tests/unit/domain -v`
 Expected: три новых файла падают с `ModuleNotFoundError`, тесты из Task 2 проходят
 
-- [ ] **Step 5: Реализовать dataset**
+- [x] **Step 5: Реализовать dataset**
 
 `src/engine/domain/dataset/models.py`:
 
@@ -865,7 +865,7 @@ def dataset_hash(
     return sha256_of(descriptor, warmup_bytes, trading_bytes)
 ```
 
-- [ ] **Step 6: Реализовать backtest-модели, метрики и run_hash**
+- [x] **Step 6: Реализовать backtest-модели, метрики и run_hash**
 
 `src/engine/domain/backtest/models.py`:
 
@@ -984,12 +984,12 @@ def run_hash(
     return sha256_of(payload)
 ```
 
-- [ ] **Step 7: Запустить все unit-тесты и проверку слоёв**
+- [x] **Step 7: Запустить все unit-тесты и проверку слоёв**
 
 Run: `cd strategy-engine && uv run pytest tests/unit tests/architecture -v`
 Expected: PASS
 
-- [ ] **Step 8: Коммит**
+- [x] **Step 8: Коммит**
 
 ```bash
 git add strategy-engine/src/engine/domain strategy-engine/tests/unit
@@ -1023,7 +1023,7 @@ git commit -m "feat(engine): add dataset and backtest domain modules with honest
   - `decode_result(payload: bytes) -> RunnerResult`
   - `read_frame(reader) -> bytes` / `write_frame(writer, payload) -> None` (asyncio)
 
-- [ ] **Step 1: Написать падающие тесты кодека**
+- [x] **Step 1: Написать падающие тесты кодека**
 
 Создать `strategy-engine/tests/contract/test_codec.py`:
 
@@ -1141,12 +1141,12 @@ def test_error_result_round_trip() -> None:
     assert decoded.metrics is None
 ```
 
-- [ ] **Step 2: Запустить и убедиться, что тесты падают**
+- [x] **Step 2: Запустить и убедиться, что тесты падают**
 
 Run: `cd strategy-engine && uv run pytest tests/contract -v`
 Expected: FAIL с `ModuleNotFoundError: No module named 'engine.adapters.sandbox.codec'`
 
-- [ ] **Step 3: Реализовать контракты рантайма**
+- [x] **Step 3: Реализовать контракты рантайма**
 
 `src/engine/domain/runtime/contracts.py`:
 
@@ -1256,7 +1256,7 @@ class StrategyOrderIntent:
     indicators: dict[str, float] = field(default_factory=dict)
 ```
 
-- [ ] **Step 4: Реализовать кодек**
+- [x] **Step 4: Реализовать кодек**
 
 `src/engine/adapters/sandbox/codec.py`:
 
@@ -1387,12 +1387,12 @@ async def read_frame(reader: asyncio.StreamReader) -> bytes:
     return await reader.readexactly(length)
 ```
 
-- [ ] **Step 5: Запустить контрактные тесты**
+- [x] **Step 5: Запустить контрактные тесты**
 
 Run: `cd strategy-engine && uv run pytest tests/contract tests/unit tests/architecture -v`
 Expected: PASS
 
-- [ ] **Step 6: Коммит**
+- [x] **Step 6: Коммит**
 
 ```bash
 git add strategy-engine/src/engine strategy-engine/tests/contract
@@ -4582,4 +4582,3 @@ Expected: все зелёные, `lint-imports` подтверждает пра�
 git add -A
 git commit -m "refactor(engine): drop legacy package and move TS client to engine-owned hashes"
 ```
-
