@@ -37,6 +37,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 markers = [
     "integration: requires real Postgres and Jesse (deselected by default)",
 ]

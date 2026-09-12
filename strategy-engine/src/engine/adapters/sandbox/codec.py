@@ -131,6 +131,19 @@ def _required_string(header: dict[str, Any], key: str) -> str:
     return value
 
 
+def decode_job_metadata(payload: bytes) -> tuple[str, float]:
+    """Read scheduling metadata without materializing the candle arrays."""
+    header, _ = _decode_header(payload)
+    timeout_seconds = header.get("timeout_seconds")
+    if (
+        isinstance(timeout_seconds, bool)
+        or not isinstance(timeout_seconds, (int, float))
+        or timeout_seconds <= 0
+    ):
+        raise ValueError("job header field 'timeout_seconds' must be positive")
+    return _required_string(header, "job_id"), float(timeout_seconds)
+
+
 def decode_job(payload: bytes) -> tuple[RunnerJob, np.ndarray, np.ndarray]:
     header, body_start = _decode_header(payload)
     columns = _required_int(header, "columns", minimum=1)
