@@ -1,0 +1,35 @@
+[importlinter]
+root_package = engine
+include_external_packages = True
+
+[importlinter:contract:layers]
+name = Layers: domain <- usecases <- adapters <- entrypoints
+type = layers
+layers =
+    engine.entrypoints
+    engine.adapters
+    engine.usecases
+    engine.domain
+
+[importlinter:contract:domain-layers]
+name = Domain modules form a dependency chain
+type = layers
+layers =
+    engine.domain.runtime
+    engine.domain.backtest
+    engine.domain.dataset
+    engine.domain.strategy
+    engine.domain.shared
+
+[importlinter:contract:pure-core]
+name = Core domain and usecases are pure of framework dependencies
+type = forbidden
+source_modules =
+    engine.domain
+    engine.usecases
+forbidden_modules =
+    jesse
+    numpy
+    pydantic
+    fastapi
+    psycopg

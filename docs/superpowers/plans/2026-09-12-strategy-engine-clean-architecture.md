@@ -38,7 +38,7 @@
 - Consumes: ничего
 - Produces: дерево пакетов `engine.domain.{shared,strategy,dataset,backtest,runtime}`, `engine.usecases.{ports,strategy,dataset,backtest}`, `engine.adapters.{jesse,sandbox}`, `engine.entrypoints.{api,runner}`; команда `uv run lint-imports`
 
-- [ ] **Step 1: Создать дерево пакетов с пустыми `__init__.py`**
+- [x] **Step 1: Создать дерево пакетов с пустыми `__init__.py`**
 
 ```bash
 cd strategy-engine
@@ -58,7 +58,7 @@ done
 rm -f tests/architecture/__init__.py tests/unit/__init__.py tests/contract/__init__.py tests/integration/__init__.py
 ```
 
-- [ ] **Step 2: Настроить сборку на новое имя модуля**
+- [x] **Step 2: Настроить сборку на новое имя модуля**
 
 В `strategy-engine/pyproject.toml` добавить секцию сборки и dev-зависимости:
 
@@ -69,14 +69,14 @@ module-name = "engine"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "integration: требует реальных Postgres и Jesse (не запускается по умолчанию)",
+    "integration: requires real Postgres and Jesse (deselected by default)",
 ]
 addopts = "-m 'not integration'"
 ```
 
 В существующую группу `[dependency-groups] dev` добавить `"import-linter>=2.0"`.
 
-- [ ] **Step 3: Написать контракты зависимостей**
+- [x] **Step 3: Написать контракты зависимостей**
 
 Создать `strategy-engine/.importlinter`:
 
@@ -86,7 +86,7 @@ root_package = engine
 include_external_packages = True
 
 [importlinter:contract:layers]
-name = Слои: domain <- usecases <- adapters <- entrypoints
+name = Layers: domain <- usecases <- adapters <- entrypoints
 type = layers
 layers =
     engine.entrypoints
@@ -95,7 +95,7 @@ layers =
     engine.domain
 
 [importlinter:contract:domain-layers]
-name = Модули domain образуют цепочку, а не клубок
+name = Domain modules form a dependency chain
 type = layers
 layers =
     engine.domain.runtime
@@ -105,7 +105,7 @@ layers =
     engine.domain.shared
 
 [importlinter:contract:pure-core]
-name = Ядро не знает про фреймворки
+name = Core domain and usecases are pure of framework dependencies
 type = forbidden
 source_modules =
     engine.domain
@@ -118,12 +118,12 @@ forbidden_modules =
     psycopg
 ```
 
-- [ ] **Step 4: Написать падающий тест на правило зависимостей**
+- [x] **Step 4: Написать падающий тест на правило зависимостей**
 
 Создать `strategy-engine/tests/architecture/test_layering.py`:
 
 ```python
-"""Правило зависимостей должно быть исполняемым, а не декларативным."""
+"""Dependency rules must be executable rather than declarative."""
 
 import subprocess
 import sys
@@ -134,10 +134,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def _run_lint_imports() -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "importlinter.cli", "lint-imports"],
+        [
+            sys.executable,
+            "-c",
+            "from importlinter.cli import lint_imports_command; lint_imports_command()",
+        ],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -147,22 +152,22 @@ def test_dependency_rule_holds() -> None:
 
 
 def test_violation_is_actually_caught(tmp_path: Path) -> None:
-    """Контракт, который ничего не ловит, хуже отсутствующего."""
+    """A contract that catches nothing is worse than having no contract."""
     offender = PROJECT_ROOT / "src/engine/domain/shared/_violation_probe.py"
     offender.write_text("import numpy  # noqa: F401\n", encoding="utf-8")
     try:
         result = _run_lint_imports()
-        assert result.returncode != 0, "import-linter пропустил numpy в domain"
+        assert result.returncode != 0, "import-linter allowed numpy in domain"
     finally:
         offender.unlink()
 ```
 
-- [ ] **Step 5: Запустить тест и убедиться, что он падает**
+- [x] **Step 5: Запустить тест и убедиться, что он падает**
 
 Run: `cd strategy-engine && uv run pytest tests/architecture -v`
 Expected: FAIL — `import-linter` ещё не установлен либо не находит пакет `engine`.
 
-- [ ] **Step 6: Установить зависимости и добиться прохождения**
+- [x] **Step 6: Установить зависимости и добиться прохождения**
 
 ```bash
 cd strategy-engine
@@ -172,7 +177,7 @@ uv run pytest tests/architecture -v
 
 Expected: PASS. Если `import-linter` жалуется, что не может импортировать `engine` — проверить, что `uv sync` переустановил проект с `module-name = "engine"`.
 
-- [ ] **Step 7: Коммит**
+- [x] **Step 7: Коммит**
 
 ```bash
 git add strategy-engine/src/engine strategy-engine/.importlinter \
