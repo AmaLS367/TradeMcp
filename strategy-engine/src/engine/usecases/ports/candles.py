@@ -13,9 +13,11 @@ class CandleRepository(Protocol):
         *,
         exchange: str,
         symbol: str,
+        timeframe: str,
         date_range: DateRange,
+        warmup_candles_num: int,
     ) -> None:
-        """Ensure that a continuous one-minute series exists for the range."""
+        """Ensure the complete trading and warmup dataset is available."""
         ...
 
     def load(
