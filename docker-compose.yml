@@ -10,12 +10,111 @@ services:
       - amaexecutioncore_default
 
   strategy_engine:
-    build: ./strategy-engine
+    build:
+      context: ./strategy-engine
+      dockerfile: docker/orchestrator.Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
     container_name: trade_strategy_engine
     restart: unless-stopped
+    environment:
+      JESSE_PASSWORD: ${JESSE_PASSWORD:?JESSE_PASSWORD is required}
+      POSTGRES_HOST: strategy_postgres
+      POSTGRES_NAME: jesse_db
+      POSTGRES_USERNAME: jesse_user
+      POSTGRES_PASSWORD: ${STRATEGY_POSTGRES_PASSWORD:?STRATEGY_POSTGRES_PASSWORD is required}
+      REDIS_HOST: strategy_redis
+      ENGINE_API_TOKEN: ${STRATEGY_ENGINE_TOKEN:?STRATEGY_ENGINE_TOKEN is required}
+      ENGINE_RUNNER_TRANSPORT: uds
+      ENGINE_RUNNER_SOCKET_PATH: /run/engine/runner.sock
+      ENGINE_RUNNER_TIMEOUT_SECONDS: "120"
+    volumes:
+      - runner_ipc:/run/engine
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      strategy_postgres:
+        condition: service_healthy
+      strategy_redis:
+        condition: service_started
+      strategy_runner:
+        condition: service_healthy
     networks:
+      # amaexecutioncore_default gives egress for importing candles from exchanges.
       - amaexecutioncore_default
+      - strategy_backend
+
+  strategy_runner:
+    build:
+      context: ./strategy-engine
+      dockerfile: docker/runner.Dockerfile
+    container_name: trade_strategy_runner
+    restart: unless-stopped
+    # No network interfaces at all: the only channel is the Unix socket on the volume.
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    # RLIMIT_AS per worker is virtual address space (numba/llvmlite map a lot);
+    # the container limit bounds real memory for all concurrent workers.
+    mem_limit: 1536m
+    pids_limit: 128
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    user: "10001:10001"
+    environment:
+      ENGINE_RUNNER_TIMEOUT_SECONDS: "120"
+      ENGINE_RUNNER_MEMORY_MB: "1024"
+      # The default RLIMIT_FSIZE=0 kills a worker with SIGXFSZ on its first
+      # cache write; read_only + tmpfs size already bound what can be written.
+      ENGINE_RUNNER_MAX_FILE_BYTES: "16777216"
+      ENGINE_MAX_CONCURRENT_RUNS: "2"
+    volumes:
+      - runner_ipc:/run/engine
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, stat, sys; sys.exit(0 if stat.S_ISSOCK(os.stat('/run/engine/runner.sock').st_mode) else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  strategy_postgres:
+    image: postgres:16-alpine
+    container_name: trade_strategy_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: jesse_db
+      POSTGRES_USER: jesse_user
+      POSTGRES_PASSWORD: ${STRATEGY_POSTGRES_PASSWORD:?STRATEGY_POSTGRES_PASSWORD is required}
+    volumes:
+      - strategy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jesse_user -d jesse_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - strategy_backend
+
+  strategy_redis:
+    image: redis:7-alpine
+    container_name: trade_strategy_redis
+    restart: unless-stopped
+    networks:
+      - strategy_backend
+
+volumes:
+  runner_ipc:
+  strategy_pgdata:
 
 networks:
   amaexecutioncore_default:
     external: true
+  strategy_backend:
+    internal: true

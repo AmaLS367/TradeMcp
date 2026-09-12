@@ -1,0 +1,14 @@
+# Test-only overlay for tests/integration/test_end_to_end.py:
+#   docker compose -f docker-compose.yml -f strategy-engine/docker/compose.e2e.yml up -d --build
+# Publishes the engine on loopback only and shortens the runner deadline so the
+# hung-strategy test takes 30s instead of 120s.
+services:
+  strategy_engine:
+    ports:
+      - "127.0.0.1:18000:8000"
+    environment:
+      ENGINE_RUNNER_TIMEOUT_SECONDS: "30"
+
+  strategy_runner:
+    environment:
+      ENGINE_RUNNER_TIMEOUT_SECONDS: "30"

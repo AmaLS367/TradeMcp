@@ -38,7 +38,7 @@ class Boom(Strategy):
 
 def _bundle(trading: np.ndarray) -> CandleBundle:
     ref = DatasetRef(
-        exchange="Binance",
+        exchange="Binance Perpetual Futures",
         symbol="BTC-USDT",
         timeframe="1m",
         date_range=DateRange(int(trading[0, 0]), int(trading[-1, 0]) + 60_000),
@@ -59,7 +59,7 @@ def _job(source: str, class_name: str) -> RunnerJob:
         strategy_class_name=class_name,
         parameters={},
         config=BacktestConfig(
-            exchange="Binance",
+            exchange="Binance Perpetual Futures",
             symbol="BTC-USDT",
             timeframe="1m",
             initial_balance=10_000.0,

@@ -36,7 +36,7 @@ def _strategy_class() -> type:
 
 def _config() -> BacktestConfig:
     return BacktestConfig(
-        exchange="Binance",
+        exchange="Binance Perpetual Futures",
         symbol="BTC-USDT",
         timeframe="1m",
         initial_balance=10_000.0,

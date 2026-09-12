@@ -46,7 +46,7 @@ class Hanging(Strategy):
 
 def _bundle(trading: np.ndarray) -> CandleBundle:
     ref = DatasetRef(
-        exchange="Binance",
+        exchange="Binance Perpetual Futures",
         symbol="BTC-USDT",
         timeframe="1m",
         date_range=DateRange(int(trading[0, 0]), int(trading[-1, 0]) + 60_000),
@@ -67,7 +67,7 @@ def _job(source: str, class_name: str, timeout: float) -> RunnerJob:
         strategy_class_name=class_name,
         parameters={},
         config=BacktestConfig(
-            exchange="Binance",
+            exchange="Binance Perpetual Futures",
             symbol="BTC-USDT",
             timeframe="1m",
             initial_balance=10_000.0,
@@ -119,6 +119,32 @@ async def test_server_runs_a_backtest(settings: Settings) -> None:
 
     assert result.status is RunnerStatus.OK
     assert result.metrics is not None
+
+
+async def test_worker_runs_in_a_private_scratch_dir_that_is_removed(
+    settings: Settings,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Jesse writes storage/ relative to cwd; the runner root is read-only."""
+    import tempfile
+
+    from jesse.research import fake_range_candles
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    server = RunnerServer(settings)
+    await server.start()
+    try:
+        result = await _ask(
+            server,
+            _job(FAST, "Fast", 60.0),
+            _bundle(fake_range_candles(300)),
+        )
+    finally:
+        await server.stop()
+
+    assert result.status is RunnerStatus.OK, result.error
+    assert list(tmp_path.iterdir()) == [], "per-run scratch dir must be cleaned up"
 
 
 async def test_job_deadline_kills_hung_worker_and_server_survives(

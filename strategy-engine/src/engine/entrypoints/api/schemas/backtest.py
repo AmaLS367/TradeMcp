@@ -5,13 +5,21 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+# Jesse 3 only knows provider names ("Binance Perpetual Futures", "Binance Spot",
+# ...). Backtests run with market_type="futures", so the short names clients
+# have always sent map to the matching perpetual market.
+_EXCHANGE_ALIASES = {
+    "binance": "Binance Perpetual Futures",
+    "bybit": "Bybit USDT Perpetual",
+}
+
 
 class BacktestRequest(BaseModel):
     source_code: str
     parameters: dict[str, Any] = Field(default_factory=dict)
     symbol: str = "BTC-USDT"
     timeframe: str = "1h"
-    exchange: str = "Binance"
+    exchange: str = "Binance Perpetual Futures"
     start_date: dt.date = Field(..., description="YYYY-MM-DD, inclusive")
     end_date: dt.date = Field(..., description="YYYY-MM-DD, exclusive")
     initial_balance: float = Field(10_000.0, gt=0)
@@ -24,6 +32,12 @@ class BacktestRequest(BaseModel):
         # Jesse only understands "BTC-USDT"; normalizing here keeps run hashes
         # identical for "BTC/USDT" and "btc-usdt".
         return value.strip().replace("/", "-").upper()
+
+    @field_validator("exchange")
+    @classmethod
+    def _resolve_exchange_alias(cls, value: str) -> str:
+        name = value.strip()
+        return _EXCHANGE_ALIASES.get(name.lower(), name)
 
     @model_validator(mode="after")
     def _check_range(self) -> BacktestRequest:

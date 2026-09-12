@@ -9,6 +9,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -114,6 +115,18 @@ class RunnerServer:
                 await writer.wait_closed()
 
     async def _spawn_worker(self, payload: bytes) -> bytes:
+        # Jesse writes storage/logs and storage/backtest-charts relative to cwd,
+        # and the runner's root filesystem is read-only. Each run gets a private
+        # scratch dir on the /tmp tmpfs, removed afterwards so runs cannot see
+        # each other's files. It holds no strategies/ + storage/ pair at start,
+        # so Jesse still does not treat it as a project (no DB, no .env).
+        with tempfile.TemporaryDirectory(
+            prefix="engine-run-",
+            ignore_cleanup_errors=True,
+        ) as run_dir:
+            return await self._run_worker(payload, run_dir)
+
+    async def _run_worker(self, payload: bytes, run_dir: str) -> bytes:
         job_id, requested_timeout = decode_job_metadata(payload)
         timeout = min(requested_timeout, self._settings.runner_timeout_seconds)
 
@@ -127,7 +140,7 @@ class RunnerServer:
                 stderr=asyncio.subprocess.PIPE,
                 preexec_fn=_build_preexec(self._settings, timeout),
                 start_new_session=_IS_POSIX,
-                cwd=os.path.abspath(os.sep),
+                cwd=run_dir,
             )
         except (OSError, subprocess.SubprocessError) as error:
             return self._error_result(

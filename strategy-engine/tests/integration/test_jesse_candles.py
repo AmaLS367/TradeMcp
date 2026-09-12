@@ -22,14 +22,14 @@ def test_loaded_dataset_is_hash_stable() -> None:
     date_range = DateRange(_ms(2023, 1, 1), _ms(2023, 1, 3))
 
     first = repo.load(
-        exchange="Binance",
+        exchange="Binance Perpetual Futures",
         symbol="BTC-USDT",
         timeframe="1h",
         date_range=date_range,
         warmup_candles_num=0,
     )
     second = repo.load(
-        exchange="Binance",
+        exchange="Binance Perpetual Futures",
         symbol="BTC-USDT",
         timeframe="1h",
         date_range=date_range,
@@ -46,14 +46,14 @@ def test_warmup_changes_the_dataset_hash() -> None:
     date_range = DateRange(_ms(2023, 1, 2), _ms(2023, 1, 3))
 
     without = repo.load(
-        exchange="Binance",
+        exchange="Binance Perpetual Futures",
         symbol="BTC-USDT",
         timeframe="1h",
         date_range=date_range,
         warmup_candles_num=0,
     )
     with_warmup = repo.load(
-        exchange="Binance",
+        exchange="Binance Perpetual Futures",
         symbol="BTC-USDT",
         timeframe="1h",
         date_range=date_range,
@@ -69,7 +69,7 @@ def test_unknown_symbol_raises_dataset_unavailable() -> None:
 
     with pytest.raises(DatasetUnavailable):
         repo.load(
-            exchange="Binance",
+            exchange="Binance Perpetual Futures",
             symbol="NOSUCH-COIN",
             timeframe="1h",
             date_range=DateRange(_ms(2023, 1, 1), _ms(2023, 1, 2)),

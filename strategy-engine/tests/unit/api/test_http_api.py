@@ -122,6 +122,15 @@ def test_slash_symbol_is_normalized() -> None:
     assert runner.calls[0][0].config.symbol == "BTC-USDT"
 
 
+def test_short_exchange_name_maps_to_jesse_provider() -> None:
+    client, runner = _client_and_runner(OK_RESULT)
+
+    response = client.post("/api/v1/backtest", json={**BACKTEST_BODY, "exchange": "binance"})
+
+    assert response.status_code == 200, response.text
+    assert runner.calls[0][0].config.exchange == "Binance Perpetual Futures"
+
+
 def test_runner_timeout_is_504() -> None:
     timeout_result = RunnerResult(
         job_id="x", status=RunnerStatus.TIMEOUT,
