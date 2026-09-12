@@ -40,7 +40,13 @@ import { db } from './mcpFirebase.js';
 import { TRADEMCP_DOCS_TOOL_NAME, getTradeMcpResearchGuide } from './tradeMcpResearchGuide.js';
 import { MARKET_DATA_MCP_TOOL_NAMES, OBSERVABILITY_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, STRATEGY_MCP_TOOL_NAMES, filterRawExchangeMethodsForProfile, isMarketplaceToolAllowed, shouldAllowRawExchangeMethod, shouldIncludeTool } from './mcpToolPolicy.js';
 import { strategyEngineClient } from './strategyEngineClient.js';
-import { saveStrategyDoc, saveStrategyVersion, saveStrategyRun } from './strategyRegistry.js';
+import {
+    listStrategyVersions,
+    registerStrategyVersion,
+    saveStrategyRun,
+    type RegisteredStrategyVersion,
+} from './strategyRegistry.js';
+import { resolveRunVersion } from './strategyVersioning.js';
 import {
     assertMethodCallable,
     collectExchangeMethods,
@@ -310,7 +316,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 },
                 {
                     name: "trade_create_strategy",
-                    description: "Register and validate a new Jesse-based Python trading strategy. Statically validates the source (blocks os, sys, subprocess, eval, file access), gets a deterministic StrategyHash (SHA-256 over source and parameters) from the strategy engine, and saves it to Firestore. Returns validation status and strategy details.",
+                    description: "Register and validate a new Jesse-based Python trading strategy. Statically validates the source (blocks os, sys, subprocess, eval, file access), gets a deterministic StrategyHash (SHA-256 over source and parameters) from the strategy engine, and saves it to Firestore as an immutable version: source and parameters that were already registered return their existing version, anything else becomes the next version (v1, v2, ...). Fails if the strategy cannot be saved. Returns validation status, versionId and strategy details.",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -331,8 +337,8 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                         type: "object",
                         properties: {
                             sourceCode: { type: "string", description: "Python source code of the strategy (or reference an existing strategy)." },
-                            strategyId: { type: "string", description: "Optional strategyId to save run results under." },
-                            versionId: { type: "string", description: "Optional versionId (e.g. v1)." },
+                            strategyId: { type: "string", description: "Optional strategyId to save run results under. The run is only saved under a registered version whose StrategyHash matches this sourceCode and parameters; otherwise the call fails before backtesting." },
+                            versionId: { type: "string", description: "Optional versionId (e.g. v2). Defaults to the version whose StrategyHash matches this sourceCode and parameters." },
                             symbol: { type: "string", description: "Trading pair symbol, e.g. BTC-USDT (BTC/USDT is accepted). Default: BTC-USDT." },
                             timeframe: { type: "string", description: "Timeframe, e.g. 1m, 15m, 1h, 4h, 1d. Default: 1h." },
                             exchange: { type: "string", description: "Jesse candle provider, e.g. 'Binance Perpetual Futures' or 'Bybit USDT Perpetual'. The short names 'Binance' and 'Bybit' map to these perpetual markets. Default: Binance Perpetual Futures." },
@@ -1571,6 +1577,8 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 ? (args.parameters as Record<string, unknown>)
                 : {};
             const tags = Array.isArray(args?.tags) ? args.tags.map(String) : [];
+            // A registration that is not stored is not a registration.
+            if (!userId) throw new Error('trade_create_strategy requires an authenticated user');
 
             const validation = await strategyEngineClient.validateStrategy(sourceCode, parameters);
             if (!validation.valid) {
@@ -1590,32 +1598,23 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
             }
             const strategyHash = validation.strategy_hash;
 
-            if (userId) {
-                await saveStrategyDoc(userId, {
-                    id: strategyId,
-                    name: nameStr,
-                    description,
-                    authorId: userId,
-                    tags,
-                    createdAt: Date.now(),
-                    updatedAt: Date.now(),
-                }).catch((err) => logger.warn({ err }, 'Failed to save strategy doc'));
-
-                await saveStrategyVersion(userId, strategyId, {
-                    versionId: 'v1',
-                    strategyId,
-                    strategyHash,
-                    sourceCode,
-                    parameters,
-                    status: 'draft',
-                    createdAt: Date.now(),
-                }).catch((err) => logger.warn({ err }, 'Failed to save strategy version'));
+            let registered: RegisteredStrategyVersion;
+            try {
+                registered = await registerStrategyVersion(
+                    userId,
+                    { id: strategyId, name: nameStr, description, tags },
+                    { strategyHash, sourceCode, parameters },
+                );
+            } catch (err) {
+                logger.error({ err, strategyId }, 'Failed to register strategy version');
+                throw new Error(`Strategy is valid but could not be saved: ${err instanceof Error ? err.message : String(err)}`);
             }
 
             const result = {
                 status: 'success',
                 strategyId,
-                versionId: 'v1',
+                versionId: registered.versionId,
+                versionCreated: registered.created,
                 strategyHash,
                 strategyClassName: validation.strategy_class_name,
                 detectedMethods: validation.detected_methods,
@@ -1636,10 +1635,35 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
             const endDate = typeof args?.endDate === 'string' ? args.endDate.trim() : '';
             if (!startDate || !endDate) throw new Error('startDate and endDate are required (YYYY-MM-DD)');
             const feeRate = typeof args?.feeRate === 'number' ? args.feeRate : 0.0006;
+            const parameters = (args?.parameters && typeof args.parameters === 'object' && !Array.isArray(args.parameters))
+                ? (args.parameters as Record<string, unknown>)
+                : {};
+            const strategyId = typeof args?.strategyId === 'string' && args.strategyId.trim() ? args.strategyId.trim() : undefined;
+            const requestedVersionId = typeof args?.versionId === 'string' && args.versionId.trim() ? args.versionId.trim() : undefined;
+            if (requestedVersionId && !strategyId) throw new Error('versionId requires strategyId');
+
+            // Resolve the version before spending minutes on the backtest: a run
+            // may only be filed under the version whose source and parameters
+            // it actually executed.
+            let target: { userId: string; strategyId: string; versionId: string; strategyHash: string } | undefined;
+            if (strategyId) {
+                if (!userId) throw new Error('Saving a backtest under strategyId requires an authenticated user');
+                const validation = await strategyEngineClient.validateStrategy(sourceCode, parameters);
+                if (!validation.valid || !validation.strategy_hash) {
+                    throw new Error(`Strategy validation failed:\n${validation.errors.join('\n')}`);
+                }
+                const resolved = resolveRunVersion(
+                    await listStrategyVersions(userId, strategyId),
+                    validation.strategy_hash,
+                    requestedVersionId,
+                );
+                if (!resolved.ok) throw new Error(`Cannot save the run under strategy "${strategyId}": ${resolved.error}`);
+                target = { userId, strategyId, versionId: resolved.versionId, strategyHash: validation.strategy_hash };
+            }
 
             const backtestRes = await strategyEngineClient.runBacktest({
                 source_code: sourceCode,
-                parameters: (args?.parameters && typeof args.parameters === 'object') ? args.parameters as Record<string, unknown> : {},
+                parameters,
                 symbol: typeof args?.symbol === 'string' ? args.symbol : 'BTC-USDT',
                 timeframe: typeof args?.timeframe === 'string' ? args.timeframe : '1h',
                 exchange: typeof args?.exchange === 'string' ? args.exchange : 'Binance',
@@ -1649,12 +1673,26 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 fee_rate: feeRate,
             });
 
-            if (userId && typeof args?.strategyId === 'string') {
-                const versionId = typeof args?.versionId === 'string' ? args.versionId : 'v1';
-                await saveStrategyRun(userId, args.strategyId, versionId, {
+            if (!target) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: trimToolText(safeJson(backtestRes))
+                    }]
+                };
+            }
+
+            if (backtestRes.strategy_hash !== target.strategyHash) {
+                throw new Error(
+                    `Engine ran strategy_hash ${backtestRes.strategy_hash}, but version ${target.versionId} holds ${target.strategyHash}; the run was not saved`,
+                );
+            }
+
+            try {
+                await saveStrategyRun(target.userId, target.strategyId, target.versionId, {
                     runId: backtestRes.run_hash,
-                    strategyId: args.strategyId,
-                    versionId,
+                    strategyId: target.strategyId,
+                    versionId: target.versionId,
                     strategyHash: backtestRes.strategy_hash,
                     runHash: backtestRes.run_hash,
                     runType: 'train_backtest',
@@ -1684,13 +1722,29 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                     equityCurve: backtestRes.equity_curve,
                     status: 'completed',
                     completedAt: Date.now(),
-                }).catch((err) => logger.warn({ err }, 'Failed to save strategy run'));
+                });
+            } catch (err) {
+                logger.error({ err, runHash: backtestRes.run_hash }, 'Failed to save strategy run');
+                const reason = err instanceof Error ? err.message : String(err);
+                return {
+                    isError: true,
+                    content: [{
+                        type: "text",
+                        text: trimToolText(
+                            `Backtest completed but could not be saved under ${target.strategyId}/${target.versionId}: ${reason}\n\n${safeJson(backtestRes)}`,
+                        )
+                    }]
+                };
             }
 
             return {
                 content: [{
                     type: "text",
-                    text: trimToolText(safeJson(backtestRes))
+                    text: trimToolText(safeJson({
+                        ...backtestRes,
+                        strategyId: target.strategyId,
+                        versionId: target.versionId,
+                    }))
                 }]
             };
         }

@@ -1,4 +1,6 @@
+import type { QuerySnapshot } from 'firebase-admin/firestore';
 import { db } from './mcpFirebase.js';
+import { planStrategyVersion, type VersionRef } from './strategyVersioning.js';
 
 export interface TakeProfitTarget {
   price: number;
@@ -102,29 +104,77 @@ export interface StrategyRunDoc {
   completedAt: number;
 }
 
-export async function saveStrategyDoc(userId: string, strategy: StrategyDoc): Promise<void> {
-  await db.collection('users').doc(userId).collection('strategies').doc(strategy.id).set(strategy, { merge: true });
+export interface RegisteredStrategyVersion {
+  versionId: string;
+  created: boolean;
+}
+
+function toVersionRefs(snap: QuerySnapshot): VersionRef[] {
+  return snap.docs.map((doc) => ({
+    versionId: doc.id,
+    strategyHash: String(doc.get('strategyHash') ?? ''),
+  }));
+}
+
+/**
+ * Stores the strategy and one immutable version in a single transaction.
+ * An identical strategyHash resolves to the version that already holds it;
+ * anything else is created as the next vN and never overwrites another one.
+ */
+export async function registerStrategyVersion(
+  userId: string,
+  strategy: Pick<StrategyDoc, 'id' | 'name' | 'description' | 'tags'>,
+  version: Pick<StrategyVersionDoc, 'strategyHash' | 'sourceCode' | 'parameters'>,
+): Promise<RegisteredStrategyVersion> {
+  const strategyRef = db.collection('users').doc(userId).collection('strategies').doc(strategy.id);
+  const versionsRef = strategyRef.collection('versions');
+
+  return db.runTransaction(async (tx) => {
+    const strategySnap = await tx.get(strategyRef);
+    const plan = planStrategyVersion(toVersionRefs(await tx.get(versionsRef)), version.strategyHash);
+    const now = Date.now();
+
+    if (strategySnap.exists) {
+      tx.update(strategyRef, {
+        name: strategy.name,
+        description: strategy.description,
+        tags: strategy.tags,
+        updatedAt: now,
+      });
+    } else {
+      const doc: StrategyDoc = { ...strategy, authorId: userId, createdAt: now, updatedAt: now };
+      tx.create(strategyRef, doc);
+    }
+
+    if (plan.kind === 'existing') return { versionId: plan.versionId, created: false };
+
+    const doc: StrategyVersionDoc = {
+      ...version,
+      versionId: plan.versionId,
+      strategyId: strategy.id,
+      status: 'draft',
+      createdAt: now,
+    };
+    tx.create(versionsRef.doc(plan.versionId), doc);
+    return { versionId: plan.versionId, created: true };
+  });
+}
+
+export async function listStrategyVersions(userId: string, strategyId: string): Promise<VersionRef[]> {
+  const snap = await db
+    .collection('users')
+    .doc(userId)
+    .collection('strategies')
+    .doc(strategyId)
+    .collection('versions')
+    .get();
+  return toVersionRefs(snap);
 }
 
 export async function getStrategyDoc(userId: string, strategyId: string): Promise<StrategyDoc | null> {
   const snap = await db.collection('users').doc(userId).collection('strategies').doc(strategyId).get();
   if (!snap.exists) return null;
   return snap.data() as StrategyDoc;
-}
-
-export async function saveStrategyVersion(
-  userId: string,
-  strategyId: string,
-  version: StrategyVersionDoc
-): Promise<void> {
-  await db
-    .collection('users')
-    .doc(userId)
-    .collection('strategies')
-    .doc(strategyId)
-    .collection('versions')
-    .doc(version.versionId)
-    .set(version);
 }
 
 export async function getStrategyVersion(
