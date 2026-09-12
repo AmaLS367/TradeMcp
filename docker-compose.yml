@@ -4,6 +4,15 @@ services:
     container_name: trade_mcp
     env_file: .env
     restart: unless-stopped
+    depends_on:
+      - strategy_engine
+    networks:
+      - amaexecutioncore_default
+
+  strategy_engine:
+    build: ./strategy-engine
+    container_name: trade_strategy_engine
+    restart: unless-stopped
     networks:
       - amaexecutioncore_default
 

@@ -6,6 +6,10 @@ export const RAW_EXCHANGE_MCP_TOOL_NAMES = ['list_exchange_methods', 'call_excha
 export const OBSERVABILITY_MCP_TOOL_NAMES = ['get_observability_metrics', 'get_observability_alerts'] as const;
 export const EARN_PUBLIC_MCP_TOOL_NAMES = ['get_bybit_earn_products', 'get_binance_locked_earn_products'] as const;
 export const EARN_PRIVATE_MCP_TOOL_NAMES = ['get_bybit_earn_position', 'get_binance_earn_positions'] as const;
+export const STRATEGY_MCP_TOOL_NAMES = [
+  'trade_create_strategy',
+  'trade_run_backtest',
+] as const;
 
 const PUBLIC_RAW_EXCHANGE_METHOD_NAMES = new Set([
   'loadMarkets',
@@ -25,6 +29,7 @@ const SAFE_RESEARCH_TOOL_NAMES = new Set([
   ...CRYPTO_ANALYSIS_MCP_TOOL_NAMES,
   ...RAW_EXCHANGE_MCP_TOOL_NAMES,
   ...EARN_PUBLIC_MCP_TOOL_NAMES,
+  ...STRATEGY_MCP_TOOL_NAMES,
   'search',
   'fetch',
 ]);

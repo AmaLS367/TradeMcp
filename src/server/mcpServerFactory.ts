@@ -38,7 +38,9 @@ import {
 } from './mcpMarketplace.js';
 import { db } from './mcpFirebase.js';
 import { TRADEMCP_DOCS_TOOL_NAME, getTradeMcpResearchGuide } from './tradeMcpResearchGuide.js';
-import { MARKET_DATA_MCP_TOOL_NAMES, OBSERVABILITY_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, filterRawExchangeMethodsForProfile, isMarketplaceToolAllowed, shouldAllowRawExchangeMethod, shouldIncludeTool } from './mcpToolPolicy.js';
+import { MARKET_DATA_MCP_TOOL_NAMES, OBSERVABILITY_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, STRATEGY_MCP_TOOL_NAMES, filterRawExchangeMethodsForProfile, isMarketplaceToolAllowed, shouldAllowRawExchangeMethod, shouldIncludeTool } from './mcpToolPolicy.js';
+import { strategyEngineClient } from './strategyEngineClient.js';
+import { calculateStrategyHash, saveStrategyDoc, saveStrategyVersion, saveStrategyRun } from './strategyRegistry.js';
 import {
     assertMethodCallable,
     collectExchangeMethods,
@@ -235,6 +237,7 @@ const MESSARI_TOOLS = new Set(['ask_messari_research', 'get_messari_timeseries_c
 const NEWSAPI_TOOLS = new Set(['search_newsapi_articles', 'get_newsapi_top_headlines', 'get_newsapi_sources']);
 const TAAPI_TOOLS = new Set(['get_taapi_indicator', 'get_taapi_bulk_indicators']);
 const MARKETDATA_TOOLS = new Set<string>([...MARKET_DATA_MCP_TOOL_NAMES]);
+const STRATEGY_TOOLS = new Set<string>([...STRATEGY_MCP_TOOL_NAMES]);
 const OBSERVABILITY_TOOLS = new Set<string>([...OBSERVABILITY_MCP_TOOL_NAMES]);
 const NATIVE_TOOLS = new Set(['search', 'fetch', 'create_trade_proposal', 'list_exchange_methods', 'call_exchange_method', 'get_account_summary', ...OBSERVABILITY_MCP_TOOL_NAMES]);
 
@@ -248,6 +251,7 @@ function extractProviderFromToolName(toolName: string): string {
   if (NEWSAPI_TOOLS.has(toolName)) return 'newsapi';
   if (TAAPI_TOOLS.has(toolName)) return 'taapi';
   if (MARKETDATA_TOOLS.has(toolName)) return 'marketdata';
+  if (STRATEGY_TOOLS.has(toolName)) return 'jesse_engine';
   if (OBSERVABILITY_TOOLS.has(toolName)) return 'observability';
   if (NATIVE_TOOLS.has(toolName)) return 'native';
   if (toolName === TRADEMCP_DOCS_TOOL_NAME || toolName === 'get_trademcp_research_guide') return 'native';
@@ -299,6 +303,46 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                     inputSchema: {
                         type: "object",
                         properties: {},
+                    },
+                    annotations: {
+                        readOnlyHint: true,
+                    },
+                },
+                {
+                    name: "trade_create_strategy",
+                    description: "Register and validate a new Jesse-based Python trading strategy. Statically validates the AST tree for security (blocks os, sys, subprocess, eval, file access), generates a deterministic StrategyHash (SHA-256), and saves it to Firestore. Returns validation status and strategy details.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            strategyId: { type: "string", description: "Unique identifier for the strategy (e.g. btc-ema-trend)." },
+                            name: { type: "string", description: "Human-readable name." },
+                            description: { type: "string", description: "Description of the trading hypothesis." },
+                            sourceCode: { type: "string", description: "Python source code implementing a Jesse Strategy." },
+                            parameters: { type: "object", description: "Optional default parameters for the strategy." },
+                            tags: { type: "array", items: { type: "string" }, description: "Optional strategy tags." },
+                        },
+                        required: ["strategyId", "sourceCode"]
+                    },
+                },
+                {
+                    name: "trade_run_backtest",
+                    description: "Execute a historical backtest of a Jesse trading strategy using the high-performance Python strategy engine. Returns quantitative metrics (Net Return, Sharpe Ratio, Sortino, Calmar, Max Drawdown, Win Rate, Profit Factor, Trade Count), equity curve, and a deterministic RunHash.",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            sourceCode: { type: "string", description: "Python source code of the strategy (or reference an existing strategy)." },
+                            strategyId: { type: "string", description: "Optional strategyId to save run results under." },
+                            versionId: { type: "string", description: "Optional versionId (e.g. v1)." },
+                            symbol: { type: "string", description: "Trading pair symbol, e.g. BTC/USDT." },
+                            timeframe: { type: "string", description: "Timeframe, e.g. 1m, 15m, 1h, 4h, 1d. Default: 1h." },
+                            exchange: { type: "string", description: "Exchange name: Binance or Bybit. Default: Binance." },
+                            startDate: { type: "string", description: "Start date in YYYY-MM-DD format." },
+                            endDate: { type: "string", description: "End date in YYYY-MM-DD format." },
+                            initialBalance: { type: "number", description: "Initial balance in USDT. Default: 10000." },
+                            feeRate: { type: "number", description: "Maker/taker fee rate. Default: 0.0006." },
+                            parameters: { type: "object", description: "Optional hyperparameters to pass to the strategy." },
+                        },
+                        required: ["sourceCode"]
                     },
                     annotations: {
                         readOnlyHint: true,
@@ -1513,6 +1557,127 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 content: [{
                     type: "text",
                     text: trimToolText(text),
+                }]
+            };
+        }
+
+        if (name === "trade_create_strategy") {
+            const sourceCode = typeof args?.sourceCode === 'string' ? args.sourceCode : '';
+            if (!sourceCode.trim()) throw new Error('sourceCode is required');
+            const strategyId = typeof args?.strategyId === 'string' && args.strategyId.trim() ? args.strategyId.trim() : 'custom-strategy';
+            const nameStr = typeof args?.name === 'string' && args.name.trim() ? args.name.trim() : strategyId;
+            const description = typeof args?.description === 'string' ? args.description.trim() : '';
+            const parameters = (args?.parameters && typeof args.parameters === 'object' && !Array.isArray(args.parameters))
+                ? (args.parameters as Record<string, unknown>)
+                : {};
+            const tags = Array.isArray(args?.tags) ? args.tags.map(String) : [];
+
+            const validation = await strategyEngineClient.validateStrategy(sourceCode);
+            if (!validation.valid) {
+                return {
+                    isError: true,
+                    content: [{
+                        type: "text",
+                        text: `Strategy validation failed:\n${validation.errors.join('\n')}`
+                    }]
+                };
+            }
+
+            const strategyHash = validation.strategy_hash || calculateStrategyHash(sourceCode, parameters);
+
+            if (userId) {
+                await saveStrategyDoc(userId, {
+                    id: strategyId,
+                    name: nameStr,
+                    description,
+                    authorId: userId,
+                    tags,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                }).catch((err) => logger.warn({ err }, 'Failed to save strategy doc'));
+
+                await saveStrategyVersion(userId, strategyId, {
+                    versionId: 'v1',
+                    strategyId,
+                    strategyHash,
+                    sourceCode,
+                    parameters,
+                    status: 'draft',
+                    createdAt: Date.now(),
+                }).catch((err) => logger.warn({ err }, 'Failed to save strategy version'));
+            }
+
+            const result = {
+                status: 'success',
+                strategyId,
+                versionId: 'v1',
+                strategyHash,
+                strategyClassName: validation.strategy_class_name,
+                detectedMethods: validation.detected_methods,
+                detectedHyperparameters: validation.detected_hyperparameters,
+            };
+
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(result))
+                }]
+            };
+        }
+
+        if (name === "trade_run_backtest") {
+            const sourceCode = typeof args?.sourceCode === 'string' ? args.sourceCode : '';
+            if (!sourceCode.trim()) throw new Error('sourceCode is required');
+
+            const backtestRes = await strategyEngineClient.runBacktest({
+                source_code: sourceCode,
+                parameters: (args?.parameters && typeof args.parameters === 'object') ? args.parameters as Record<string, unknown> : {},
+                symbol: typeof args?.symbol === 'string' ? args.symbol : 'BTC/USDT',
+                timeframe: typeof args?.timeframe === 'string' ? args.timeframe : '1h',
+                exchange: typeof args?.exchange === 'string' ? args.exchange : 'Binance',
+                start_date: typeof args?.startDate === 'string' ? args.startDate : '2023-01-01',
+                end_date: typeof args?.endDate === 'string' ? args.endDate : '2024-01-01',
+                initial_balance: typeof args?.initialBalance === 'number' ? args.initialBalance : 10000,
+                fee_rate: typeof args?.feeRate === 'number' ? args.feeRate : 0.0006,
+            });
+
+            if (userId && typeof args?.strategyId === 'string') {
+                const versionId = typeof args?.versionId === 'string' ? args.versionId : 'v1';
+                await saveStrategyRun(userId, args.strategyId, versionId, {
+                    runId: backtestRes.run_hash,
+                    strategyId: args.strategyId,
+                    versionId,
+                    strategyHash: backtestRes.strategy_hash,
+                    runHash: backtestRes.run_hash,
+                    runType: 'train_backtest',
+                    environment: {
+                        symbol: typeof args?.symbol === 'string' ? args.symbol : 'BTC/USDT',
+                        timeframe: typeof args?.timeframe === 'string' ? args.timeframe : '1h',
+                        startDate: typeof args?.startDate === 'string' ? args.startDate : '2023-01-01',
+                        endDate: typeof args?.endDate === 'string' ? args.endDate : '2024-01-01',
+                        feeRate: typeof args?.feeRate === 'number' ? args.feeRate : 0.0006,
+                        candlesCount: 1000,
+                    },
+                    metrics: {
+                        netProfitPercent: backtestRes.metrics.net_return,
+                        sharpeRatio: backtestRes.metrics.sharpe,
+                        sortinoRatio: backtestRes.metrics.sortino,
+                        calmarRatio: backtestRes.metrics.calmar,
+                        maxDrawdownPercent: backtestRes.metrics.max_drawdown,
+                        winRate: backtestRes.metrics.win_rate,
+                        profitFactor: backtestRes.metrics.profit_factor,
+                        totalTrades: backtestRes.metrics.total_trades,
+                    },
+                    equityCurve: backtestRes.equity_curve,
+                    status: 'completed',
+                    completedAt: Date.now(),
+                }).catch((err) => logger.warn({ err }, 'Failed to save strategy run'));
+            }
+
+            return {
+                content: [{
+                    type: "text",
+                    text: trimToolText(safeJson(backtestRes))
                 }]
             };
         }

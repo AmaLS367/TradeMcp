@@ -68,6 +68,11 @@ describe('resolveToolCallProvider', () => {
       expect(resolveToolCallProvider(toolName)).toBe('observability');
     });
 
+    it('resolves Strategy tools', () => {
+      expect(resolveToolCallProvider('trade_create_strategy')).toBe('jesse_engine');
+      expect(resolveToolCallProvider('trade_run_backtest')).toBe('jesse_engine');
+    });
+
     it('resolves native standalone tools', () => {
       expect(resolveToolCallProvider('search')).toBe('native');
       expect(resolveToolCallProvider('fetch')).toBe('native');
