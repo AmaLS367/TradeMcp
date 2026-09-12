@@ -1,7 +1,7 @@
 [project]
 name = "strategy-engine"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "Backtests Jesse strategies on real candles and runs untrusted strategy code in an isolated runner"
 readme = "README.md"
 authors = [
     { name = "Ama", email = "ama@amadev.tech" }
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-strategy-engine = "strategy_engine:main"
+engine-runner = "engine.entrypoints.runner.server:main"
 
 [build-system]
 requires = ["uv_build>=0.9.16,<0.10.0"]

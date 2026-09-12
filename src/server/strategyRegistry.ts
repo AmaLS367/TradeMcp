@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { db } from './mcpFirebase.js';
 
 export interface TakeProfitTarget {
@@ -59,14 +58,17 @@ export interface StrategyVersionDoc {
   createdAt: number;
 }
 
+// Metrics the engine cannot compute (e.g. Sharpe with no variance) are null,
+// never 0: a fake zero is indistinguishable from a real result.
 export interface StrategyRunMetrics {
-  netProfitPercent: number;
-  sharpeRatio: number;
-  sortinoRatio: number;
-  calmarRatio: number;
-  maxDrawdownPercent: number;
-  winRate: number;
-  profitFactor: number;
+  netProfitPercent: number | null;
+  sharpeRatio: number | null;
+  sortinoRatio: number | null;
+  calmarRatio: number | null;
+  maxDrawdownPercent: number | null;
+  winRate: number | null;
+  profitFactor: number | null;
+  payoffRatio?: number | null;
   totalTrades: number;
   significancePValue?: number;
   monteCarloMedianSharpe?: number;
@@ -74,6 +76,9 @@ export interface StrategyRunMetrics {
   riskOfRuinPercent?: number;
 }
 
+// Hashes come from the Python engine and are not computed here: two
+// independent canonical-JSON implementations drifted apart (Python adds spaces
+// after separators, JSON.stringify does not), so one input produced two hashes.
 export interface StrategyRunDoc {
   runId: string;
   strategyId: string;
@@ -87,48 +92,14 @@ export interface StrategyRunDoc {
     startDate: string;
     endDate: string;
     feeRate: number;
-    candlesCount: number;
+    datasetHash: string;
+    warmupRows: number;
+    tradingRows: number;
   };
   metrics: StrategyRunMetrics;
-  equityCurve?: { timestamp: number; equity: number }[];
+  equityCurve?: { timestamp_ms: number; equity: number }[];
   status: 'pending' | 'running' | 'completed' | 'failed';
   completedAt: number;
-}
-
-export function calculateStrategyHash(sourceCode: string, parameters: Record<string, unknown> = {}): string {
-  const normalizedSource = sourceCode
-    .split('\n')
-    .map((line) => line.trimEnd())
-    .filter((line) => line.length > 0)
-    .join('\n');
-
-  const sortedParams = JSON.stringify(parameters, Object.keys(parameters).sort());
-  const payload = `${normalizedSource}::${sortedParams}`;
-  return crypto.createHash('sha256').update(payload).digest('hex');
-}
-
-export interface RunHashParams {
-  strategyHash: string;
-  symbol: string;
-  timeframe: string;
-  startDate: string;
-  endDate: string;
-  feeRate: number;
-  candlesCount: number;
-}
-
-export function calculateRunHash(params: RunHashParams): string {
-  const payload = [
-    params.strategyHash,
-    params.symbol,
-    params.timeframe,
-    params.startDate,
-    params.endDate,
-    params.feeRate.toString(),
-    params.candlesCount.toString(),
-  ].join('::');
-
-  return crypto.createHash('sha256').update(payload).digest('hex');
 }
 
 export async function saveStrategyDoc(userId: string, strategy: StrategyDoc): Promise<void> {

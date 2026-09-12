@@ -40,7 +40,7 @@ import { db } from './mcpFirebase.js';
 import { TRADEMCP_DOCS_TOOL_NAME, getTradeMcpResearchGuide } from './tradeMcpResearchGuide.js';
 import { MARKET_DATA_MCP_TOOL_NAMES, OBSERVABILITY_MCP_TOOL_NAMES, RAW_EXCHANGE_MCP_TOOL_NAMES, STRATEGY_MCP_TOOL_NAMES, filterRawExchangeMethodsForProfile, isMarketplaceToolAllowed, shouldAllowRawExchangeMethod, shouldIncludeTool } from './mcpToolPolicy.js';
 import { strategyEngineClient } from './strategyEngineClient.js';
-import { calculateStrategyHash, saveStrategyDoc, saveStrategyVersion, saveStrategyRun } from './strategyRegistry.js';
+import { saveStrategyDoc, saveStrategyVersion, saveStrategyRun } from './strategyRegistry.js';
 import {
     assertMethodCallable,
     collectExchangeMethods,
@@ -310,7 +310,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 },
                 {
                     name: "trade_create_strategy",
-                    description: "Register and validate a new Jesse-based Python trading strategy. Statically validates the AST tree for security (blocks os, sys, subprocess, eval, file access), generates a deterministic StrategyHash (SHA-256), and saves it to Firestore. Returns validation status and strategy details.",
+                    description: "Register and validate a new Jesse-based Python trading strategy. Statically validates the source (blocks os, sys, subprocess, eval, file access), gets a deterministic StrategyHash (SHA-256 over source and parameters) from the strategy engine, and saves it to Firestore. Returns validation status and strategy details.",
                     inputSchema: {
                         type: "object",
                         properties: {
@@ -326,23 +326,23 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 },
                 {
                     name: "trade_run_backtest",
-                    description: "Execute a historical backtest of a Jesse trading strategy using the high-performance Python strategy engine. Returns quantitative metrics (Net Return, Sharpe Ratio, Sortino, Calmar, Max Drawdown, Win Rate, Profit Factor, Trade Count), equity curve, and a deterministic RunHash.",
+                    description: "Execute a historical backtest of a Jesse strategy on real market data from the engine's candle store. Returns quantitative metrics (Net Return, Sharpe, Sortino, Calmar, Max Drawdown, Win Rate, Profit Factor, Payoff Ratio, trade counts), the equity curve, and deterministic StrategyHash/DatasetHash/RunHash. Metrics that cannot be computed are returned as null, never as 0. If historical data for the requested range is unavailable the call fails rather than returning a fabricated result.",
                     inputSchema: {
                         type: "object",
                         properties: {
                             sourceCode: { type: "string", description: "Python source code of the strategy (or reference an existing strategy)." },
                             strategyId: { type: "string", description: "Optional strategyId to save run results under." },
                             versionId: { type: "string", description: "Optional versionId (e.g. v1)." },
-                            symbol: { type: "string", description: "Trading pair symbol, e.g. BTC/USDT." },
+                            symbol: { type: "string", description: "Trading pair symbol, e.g. BTC-USDT (BTC/USDT is accepted). Default: BTC-USDT." },
                             timeframe: { type: "string", description: "Timeframe, e.g. 1m, 15m, 1h, 4h, 1d. Default: 1h." },
-                            exchange: { type: "string", description: "Exchange name: Binance or Bybit. Default: Binance." },
-                            startDate: { type: "string", description: "Start date in YYYY-MM-DD format." },
-                            endDate: { type: "string", description: "End date in YYYY-MM-DD format." },
+                            exchange: { type: "string", description: "Jesse candle provider, e.g. 'Binance Perpetual Futures' or 'Bybit USDT Perpetual'. The short names 'Binance' and 'Bybit' map to these perpetual markets. Default: Binance Perpetual Futures." },
+                            startDate: { type: "string", description: "Start date in YYYY-MM-DD format (UTC, inclusive)." },
+                            endDate: { type: "string", description: "End date in YYYY-MM-DD format (UTC, exclusive)." },
                             initialBalance: { type: "number", description: "Initial balance in USDT. Default: 10000." },
                             feeRate: { type: "number", description: "Maker/taker fee rate. Default: 0.0006." },
                             parameters: { type: "object", description: "Optional hyperparameters to pass to the strategy." },
                         },
-                        required: ["sourceCode"]
+                        required: ["sourceCode", "startDate", "endDate"]
                     },
                     annotations: {
                         readOnlyHint: true,
@@ -1572,7 +1572,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 : {};
             const tags = Array.isArray(args?.tags) ? args.tags.map(String) : [];
 
-            const validation = await strategyEngineClient.validateStrategy(sourceCode);
+            const validation = await strategyEngineClient.validateStrategy(sourceCode, parameters);
             if (!validation.valid) {
                 return {
                     isError: true,
@@ -1583,7 +1583,12 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 };
             }
 
-            const strategyHash = validation.strategy_hash || calculateStrategyHash(sourceCode, parameters);
+            // The engine is the only source of hashes. A valid strategy without a
+            // hash is a contract mismatch, not a reason to compute a diverging one.
+            if (!validation.strategy_hash) {
+                throw new Error('Strategy engine returned no strategy_hash for a valid strategy');
+            }
+            const strategyHash = validation.strategy_hash;
 
             if (userId) {
                 await saveStrategyDoc(userId, {
@@ -1614,7 +1619,6 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                 strategyHash,
                 strategyClassName: validation.strategy_class_name,
                 detectedMethods: validation.detected_methods,
-                detectedHyperparameters: validation.detected_hyperparameters,
             };
 
             return {
@@ -1628,17 +1632,21 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
         if (name === "trade_run_backtest") {
             const sourceCode = typeof args?.sourceCode === 'string' ? args.sourceCode : '';
             if (!sourceCode.trim()) throw new Error('sourceCode is required');
+            const startDate = typeof args?.startDate === 'string' ? args.startDate.trim() : '';
+            const endDate = typeof args?.endDate === 'string' ? args.endDate.trim() : '';
+            if (!startDate || !endDate) throw new Error('startDate and endDate are required (YYYY-MM-DD)');
+            const feeRate = typeof args?.feeRate === 'number' ? args.feeRate : 0.0006;
 
             const backtestRes = await strategyEngineClient.runBacktest({
                 source_code: sourceCode,
                 parameters: (args?.parameters && typeof args.parameters === 'object') ? args.parameters as Record<string, unknown> : {},
-                symbol: typeof args?.symbol === 'string' ? args.symbol : 'BTC/USDT',
+                symbol: typeof args?.symbol === 'string' ? args.symbol : 'BTC-USDT',
                 timeframe: typeof args?.timeframe === 'string' ? args.timeframe : '1h',
                 exchange: typeof args?.exchange === 'string' ? args.exchange : 'Binance',
-                start_date: typeof args?.startDate === 'string' ? args.startDate : '2023-01-01',
-                end_date: typeof args?.endDate === 'string' ? args.endDate : '2024-01-01',
+                start_date: startDate,
+                end_date: endDate,
                 initial_balance: typeof args?.initialBalance === 'number' ? args.initialBalance : 10000,
-                fee_rate: typeof args?.feeRate === 'number' ? args.feeRate : 0.0006,
+                fee_rate: feeRate,
             });
 
             if (userId && typeof args?.strategyId === 'string') {
@@ -1650,22 +1658,27 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
                     strategyHash: backtestRes.strategy_hash,
                     runHash: backtestRes.run_hash,
                     runType: 'train_backtest',
+                    // The dataset descriptor is what the engine actually ran on
+                    // (symbol already normalized, e.g. BTC/USDT -> BTC-USDT).
                     environment: {
-                        symbol: typeof args?.symbol === 'string' ? args.symbol : 'BTC/USDT',
-                        timeframe: typeof args?.timeframe === 'string' ? args.timeframe : '1h',
-                        startDate: typeof args?.startDate === 'string' ? args.startDate : '2023-01-01',
-                        endDate: typeof args?.endDate === 'string' ? args.endDate : '2024-01-01',
-                        feeRate: typeof args?.feeRate === 'number' ? args.feeRate : 0.0006,
-                        candlesCount: 1000,
+                        symbol: backtestRes.dataset.symbol,
+                        timeframe: backtestRes.dataset.timeframe,
+                        startDate,
+                        endDate,
+                        feeRate,
+                        datasetHash: backtestRes.dataset_hash,
+                        warmupRows: backtestRes.dataset.warmup_rows,
+                        tradingRows: backtestRes.dataset.trading_rows,
                     },
                     metrics: {
-                        netProfitPercent: backtestRes.metrics.net_return,
+                        netProfitPercent: backtestRes.metrics.net_return_percent,
                         sharpeRatio: backtestRes.metrics.sharpe,
                         sortinoRatio: backtestRes.metrics.sortino,
                         calmarRatio: backtestRes.metrics.calmar,
-                        maxDrawdownPercent: backtestRes.metrics.max_drawdown,
+                        maxDrawdownPercent: backtestRes.metrics.max_drawdown_percent,
                         winRate: backtestRes.metrics.win_rate,
                         profitFactor: backtestRes.metrics.profit_factor,
+                        payoffRatio: backtestRes.metrics.payoff_ratio,
                         totalTrades: backtestRes.metrics.total_trades,
                     },
                     equityCurve: backtestRes.equity_curve,
