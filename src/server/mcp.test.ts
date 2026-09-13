@@ -4,6 +4,7 @@ import {
   decrypt,
   encrypt,
   getTradeMcpResearchGuide,
+  isAllowedOAuthRedirectUri,
   OBSERVABILITY_MCP_TOOL_NAMES,
   RAW_EXCHANGE_MCP_TOOL_NAMES,
   resolveEffectiveMcpProfile,
@@ -81,6 +82,17 @@ describe('Firestore sanitization', () => {
       },
       untouched: null,
     });
+  });
+});
+
+describe('OAuth redirect URI allowlist', () => {
+  it('allows Codex loopback callbacks with per-login IDs', () => {
+    expect(isAllowedOAuthRedirectUri('http://127.0.0.1:1455/callback/login-id')).toBe(true);
+    expect(isAllowedOAuthRedirectUri('http://localhost:1455/callback/login-id')).toBe(true);
+  });
+
+  it('does not confuse callback-prefixed paths with callback routes', () => {
+    expect(isAllowedOAuthRedirectUri('http://127.0.0.1:1455/callback-evil')).toBe(false);
   });
 });
 

@@ -109,7 +109,7 @@ function protectedResourceMetadata() {
     };
 }
 
-function isAllowedOAuthRedirectUri(redirectUri: string) {
+export function isAllowedOAuthRedirectUri(redirectUri: string) {
     try {
         const url = new URL(redirectUri);
         if (url.protocol === 'https:' && url.hostname === 'chatgpt.com') {
@@ -121,7 +121,7 @@ function isAllowedOAuthRedirectUri(redirectUri: string) {
         }
 
         if (url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')) {
-            return url.pathname === '/callback';
+            return url.pathname === '/callback' || url.pathname.startsWith('/callback/');
         }
 
         return false;
