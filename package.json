@@ -50,7 +50,7 @@
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
-    "express": "^4.22.2",
+    "express": "^4.22.3",
     "express-rate-limit": "^8.6.2",
     "firebase": "^12.17.1",
     "firebase-admin": "^13.10.0",
@@ -86,6 +86,6 @@
   "overrides": {
     "uuid": "^11.1.1",
     "@grpc/grpc-js": "^1.14.4",
-    "qs": "^6.16.0"
+    "qs": "^6.17.1"
   }
 }
