@@ -1,6 +1,6 @@
 import { Request } from 'express';
 import crypto from 'crypto';
-import admin from 'firebase-admin';
+import { FieldValue, type Query } from 'firebase-admin/firestore';
 import { db } from './mcpFirebase';
 import { logger } from './logger';
 
@@ -177,7 +177,7 @@ export function collapseRecentOrderEvents(events: RecentOrderEvent[]): RecentOrd
 }
 
 export async function getToolMetrics(userId: string, since?: Date): Promise<ToolMetrics> {
-  let query: FirebaseFirestore.Query = db.collection('tool_calls')
+  let query: Query = db.collection('tool_calls')
     .where('userId', '==', userId)
     .orderBy('timestamp', 'desc');
 
@@ -364,7 +364,7 @@ export async function recordAlert(params: RecordAlertParams) {
         toolName: params.toolName,
         message: params.message,
         severity: params.severity,
-        count: admin.firestore.FieldValue.increment(1),
+        count: FieldValue.increment(1),
         lastOccurred: new Date().toISOString(),
         resolved: false,
         createdAt: new Date().toISOString(),

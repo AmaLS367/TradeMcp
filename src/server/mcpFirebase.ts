@@ -1,4 +1,4 @@
-import admin from 'firebase-admin';
+import { applicationDefault, cert, getApp, getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
@@ -23,14 +23,14 @@ function loadFirebaseConfig() {
 
 const firebaseConfig = loadFirebaseConfig();
 
-if (!admin.apps.length) {
+if (getApps().length === 0) {
   const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  admin.initializeApp({
+  initializeApp({
     credential: serviceAccountKey
-      ? admin.credential.cert(JSON.parse(serviceAccountKey))
-      : admin.credential.applicationDefault(),
+      ? cert(JSON.parse(serviceAccountKey))
+      : applicationDefault(),
     projectId: firebaseConfig.projectId,
   });
 }
 
-export const db = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(getApp(), firebaseConfig.firestoreDatabaseId);

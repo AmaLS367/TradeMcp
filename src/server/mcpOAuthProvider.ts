@@ -1,3 +1,4 @@
+import type { CollectionReference, Firestore } from 'firebase-admin/firestore';
 import crypto from 'crypto';
 import type { OAuthClientInformationFull, OAuthClientMetadata, OAuthTokens, OAuthTokenRevocationRequest } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { AuthorizationParams, OAuthServerProvider } from '@modelcontextprotocol/sdk/server/auth/provider.js';
@@ -26,9 +27,9 @@ type StoredToken = {
 };
 
 class FirestoreClientsStore {
-  private collection: FirebaseFirestore.CollectionReference;
+  private collection: CollectionReference;
 
-  constructor(db: FirebaseFirestore.Firestore) {
+  constructor(db: Firestore) {
     this.collection = db.collection('oauth_clients');
   }
 
@@ -57,11 +58,11 @@ class FirestoreClientsStore {
 
 export class FirebaseOAuthProvider implements OAuthServerProvider {
   readonly clientsStore: FirestoreClientsStore;
-  private pendingCollection: FirebaseFirestore.CollectionReference;
-  private codesCollection: FirebaseFirestore.CollectionReference;
-  private tokensCollection: FirebaseFirestore.CollectionReference;
+  private pendingCollection: CollectionReference;
+  private codesCollection: CollectionReference;
+  private tokensCollection: CollectionReference;
 
-  constructor(private readonly publicBaseUrl: string, db: FirebaseFirestore.Firestore) {
+  constructor(private readonly publicBaseUrl: string, db: Firestore) {
     this.clientsStore = new FirestoreClientsStore(db);
     this.pendingCollection = db.collection('oauth_pending');
     this.codesCollection = db.collection('oauth_codes');
