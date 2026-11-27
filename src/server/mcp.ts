@@ -796,8 +796,12 @@ mcpRouter.post('/messages', async (req, res) => {
 });
 
 // --- Execution Engine ---
-// Listen to all trade proposals across all users
-db.collectionGroup('trade_proposals')
+// Initialize on server startup, so importing MCP helpers cannot start a live listener.
+let tradeExecutionUnsubscribe: (() => void) | undefined;
+
+export function startTradeExecutionListener(): void {
+    if (tradeExecutionUnsubscribe) return;
+    tradeExecutionUnsubscribe = db.collectionGroup('trade_proposals')
     .where('status', '==', 'approved')
     .onSnapshot(async (snapshot) => {
         for (const change of snapshot.docChanges()) {
@@ -929,3 +933,4 @@ db.collectionGroup('trade_proposals')
     }, err => {
         logger.error(err, "Execution engine listener error", err);
     });
+}

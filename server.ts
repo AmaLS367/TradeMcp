@@ -9,7 +9,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
 import { rateLimit } from "express-rate-limit";
-import { db, mcpRouter, mcpWellKnownRouter, verifyAuth } from "./src/server/mcp.js";
+import { db, mcpRouter, mcpWellKnownRouter, startTradeExecutionListener, verifyAuth } from "./src/server/mcp.js";
 import { validateExchangeKeys } from "./src/server/exchangeValidator.js";
 import { logger } from "./src/server/logger.js";
 
@@ -136,6 +136,7 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", async () => {
     logger.info(`Server running on http://0.0.0.0:${PORT}`);
+    startTradeExecutionListener();
     
     // Startup health check
     const firebaseStatus = await checkFirebaseConnection();
