@@ -22,3 +22,30 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm audit --audit-level=low
+
+  strategy-engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: strategy-engine
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: '0.13.9'
+          enable-cache: true
+          cache-dependency-glob: strategy-engine/uv.lock
+      - name: Install Strategy Engine dependencies
+        run: uv sync --locked --group dev
+      - name: Check Python source
+        run: uv run --locked ruff check src tests
+      - name: Enforce architecture contracts
+        run: uv run --locked lint-imports
+      - name: Run Python unit and contract tests
+        run: uv run --locked pytest -q
+      - name: Python dependency audit (known Jesse constraints, nonblocking)
+        continue-on-error: true
+        run: uv audit --locked
