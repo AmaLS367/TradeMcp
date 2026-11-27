@@ -4,7 +4,8 @@ import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middlew
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { OAuthClientMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import express from "express";
-import admin from 'firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 import ccxt from 'ccxt';
 import crypto from 'crypto';
 import { logger } from './logger.js';
@@ -152,7 +153,7 @@ async function authContextFromMcpRequest(req: express.Request) {
 
     const token = req.query.token as string | undefined;
     if (token) {
-        const decoded = await admin.auth().verifyIdToken(token);
+        const decoded = await getAuth().verifyIdToken(token);
         return { userId: decoded.uid };
     }
 
@@ -351,7 +352,7 @@ mcpRouter.post('/oauth/complete', async (req, res) => {
     }
 
     try {
-        const decoded = await admin.auth().verifyIdToken(idToken);
+        const decoded = await getAuth().verifyIdToken(idToken);
         const redirectUrl = await oauthProvider.completeAuthorization(requestId, decoded.uid);
         res.json({ redirectUrl });
     } catch (err: any) {
@@ -394,7 +395,7 @@ export async function verifyAuth(req: express.Request, res: express.Response, ne
     }
     const idToken = authHeader.split('Bearer ')[1];
     try {
-        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        const decodedToken = await getAuth().verifyIdToken(idToken);
         (req as any).userId = decodedToken.uid;
         next();
     } catch (error) {
@@ -441,7 +442,7 @@ mcpRouter.put('/mcp-servers/:serverId', verifyAuth, async (req, res) => {
         const docRef = db.doc(`users/${userId}/mcp_server_connections/${serverId}`);
         const existingSnap = await docRef.get();
         const existing = existingSnap.exists ? existingSnap.data() as StoredMcpServerConnection : undefined;
-        const now = admin.firestore.FieldValue.serverTimestamp();
+        const now = FieldValue.serverTimestamp();
         const isEnabled = typeof req.body?.isEnabled === 'boolean' ? req.body.isEnabled : true;
         await docRef.set(sanitizeFirestoreData({
             serverId,
@@ -468,7 +469,7 @@ mcpRouter.post('/mcp-servers/:serverId/test', verifyAuth, async (req, res) => {
     }
 
     const docRef = db.doc(`users/${userId}/mcp_server_connections/${serverId}`);
-    const now = admin.firestore.FieldValue.serverTimestamp();
+    const now = FieldValue.serverTimestamp();
     try {
         const result = await listMarketplaceServerTools(
             serverId,
@@ -551,7 +552,7 @@ mcpRouter.put('/data-providers/:provider', verifyAuth, async (req, res) => {
         const existingSnap = await docRef.get();
         const existing = existingSnap.exists ? existingSnap.data() as StoredDataProviderDocument : undefined;
         const doc = buildDataProviderDocument(provider, req.body || {}, encrypt, existing);
-        const now = admin.firestore.FieldValue.serverTimestamp();
+        const now = FieldValue.serverTimestamp();
         await docRef.set(sanitizeFirestoreData({
             ...doc,
             createdAt: existing?.createdAt || now,
@@ -578,7 +579,7 @@ mcpRouter.post('/data-providers/:provider/validate', verifyAuth, async (req, res
         const existing = existingSnap.exists ? existingSnap.data() as StoredDataProviderDocument : undefined;
         const validationResult = await validateDataProviderInput(provider, req.body || {}, existing);
         if (existing) {
-            await docRef.update({ lastValidatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            await docRef.update({ lastValidatedAt: FieldValue.serverTimestamp() });
         }
         res.json({ valid: true, ...validationResult });
     } catch (err: any) {
@@ -631,7 +632,7 @@ mcpRouter.post('/connections', verifyAuth, async (req, res) => {
             apiSecretEncrypted,
             apiKeyPreview,
             isActive: true,
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            createdAt: FieldValue.serverTimestamp()
         });
 
         res.json({ success: true, id: docRef.id });
@@ -664,7 +665,7 @@ mcpRouter.post('/keys', verifyAuth, async (req, res) => {
         key,
         label: req.body.label || 'Default',
         profile,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
     });
     res.json({ success: true, id: docRef.id, key, profile });
 });
@@ -706,7 +707,7 @@ mcpRouter.post('/observability/alerts/:id/resolve', verifyAuth, async (req, res)
     try {
         await db.collection('alerts').doc(req.params.id).update({
             resolved: true,
-            resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+            resolvedAt: FieldValue.serverTimestamp(),
         });
         res.json({ success: true });
     } catch (err: any) {
@@ -795,8 +796,12 @@ mcpRouter.post('/messages', async (req, res) => {
 });
 
 // --- Execution Engine ---
-// Listen to all trade proposals across all users
-db.collectionGroup('trade_proposals')
+// Initialize on server startup, so importing MCP helpers cannot start a live listener.
+let tradeExecutionUnsubscribe: (() => void) | undefined;
+
+export function startTradeExecutionListener(): void {
+    if (tradeExecutionUnsubscribe) return;
+    tradeExecutionUnsubscribe = db.collectionGroup('trade_proposals')
     .where('status', '==', 'approved')
     .onSnapshot(async (snapshot) => {
         for (const change of snapshot.docChanges()) {
@@ -815,7 +820,7 @@ db.collectionGroup('trade_proposals')
                         }
                         transaction.update(doc.ref, {
                             status: 'executing',
-                            executionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+                            executionStartedAt: FieldValue.serverTimestamp(),
                         });
                     });
 
@@ -878,7 +883,7 @@ db.collectionGroup('trade_proposals')
                         status: 'executed',
                         executionResult: JSON.stringify(order),
                         executionHash: order.id,
-                        executedAt: admin.firestore.FieldValue.serverTimestamp()
+                        executedAt: FieldValue.serverTimestamp()
                     });
 
                     recordOrderEvent({
@@ -898,7 +903,7 @@ db.collectionGroup('trade_proposals')
                         eventType: 'trade_executed',
                         source: 'execution_engine',
                         payload: JSON.stringify(order),
-                        createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        createdAt: FieldValue.serverTimestamp()
                     });
 
                 } catch (err: any) {
@@ -920,7 +925,7 @@ db.collectionGroup('trade_proposals')
                     await doc.ref.update({
                         status: 'failed',
                         executionResult: err.message,
-                        executedAt: admin.firestore.FieldValue.serverTimestamp()
+                        executedAt: FieldValue.serverTimestamp()
                     });
                 }
             }
@@ -928,3 +933,4 @@ db.collectionGroup('trade_proposals')
     }, err => {
         logger.error(err, "Execution engine listener error", err);
     });
+}

@@ -1,4 +1,4 @@
-import admin from 'firebase-admin';
+import { applicationDefault, cert, getApp, getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import fs from 'fs';
 import path from 'path';
@@ -8,29 +8,29 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function loadFirebaseConfig() {
   const configPath = path.resolve(__dirname, '../firebase-applet-config.json');
-  if (fs.existsSync(configPath)) {
-    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-  }
   const examplePath = path.resolve(__dirname, '../firebase-applet-config.example.json');
-  if (fs.existsSync(examplePath)) {
-    return JSON.parse(fs.readFileSync(examplePath, 'utf-8'));
-  }
+  const sourcePath = fs.existsSync(configPath) ? configPath : examplePath;
+  const fileConfig = fs.existsSync(sourcePath)
+    ? JSON.parse(fs.readFileSync(sourcePath, 'utf-8'))
+    : {};
+
   return {
-    projectId: process.env.FIREBASE_PROJECT_ID || 'your-project',
-    firestoreDatabaseId: process.env.FIRESTORE_DATABASE_ID,
+    ...fileConfig,
+    projectId: process.env.FIREBASE_PROJECT_ID || fileConfig.projectId || 'your-project',
+    firestoreDatabaseId: process.env.FIRESTORE_DATABASE_ID || fileConfig.firestoreDatabaseId,
   };
 }
 
 const firebaseConfig = loadFirebaseConfig();
 
-if (!admin.apps.length) {
+if (getApps().length === 0) {
   const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  admin.initializeApp({
+  initializeApp({
     credential: serviceAccountKey
-      ? admin.credential.cert(JSON.parse(serviceAccountKey))
-      : admin.credential.applicationDefault(),
+      ? cert(JSON.parse(serviceAccountKey))
+      : applicationDefault(),
     projectId: firebaseConfig.projectId,
   });
 }
 
-export const db = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(getApp(), firebaseConfig.firestoreDatabaseId);
