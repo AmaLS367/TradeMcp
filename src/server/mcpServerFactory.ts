@@ -1,6 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { ListToolsRequestSchema, CallToolRequestSchema, type Tool } from "@modelcontextprotocol/sdk/types.js";
-import admin from 'firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from './logger.js';
 import { getFxCandles, getFxQuote, getTechnicalIndicator, getTechnicalIndicatorCatalog, SUPPORTED_TWELVE_INDICATORS } from './marketData.js';
 import { withLatencyContext, getAccumulatedProviderLatency } from './providerLatency.js';
@@ -1171,7 +1171,7 @@ export function createMcpServer(userId: string | null, profile?: string, clientT
             await proposalRef.set({
                 ...args,
                 status: 'pending_approval',
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
+                createdAt: FieldValue.serverTimestamp()
             });
             const message = `Proposal created with ID: ${proposalRef.id}. It is pending human approval in the Trade MCP dashboard.`;
             return {
