@@ -46,8 +46,7 @@ jobs:
         run: uv run --locked lint-imports
       - name: Run Python unit and contract tests
         run: uv run --locked pytest -q
-      - name: Python dependency audit (known Jesse constraints, nonblocking)
-        continue-on-error: true
+      - name: Python dependency audit (required)
         run: uv audit --locked
 
   docker-build:
